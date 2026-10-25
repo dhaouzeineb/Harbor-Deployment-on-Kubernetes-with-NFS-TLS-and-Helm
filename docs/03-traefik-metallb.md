@@ -62,15 +62,12 @@ Traefik will act as the Ingress Controller for applications deployed in the clus
 helm repo add traefik https://traefik.github.io/charts
 ```
 
-![Screenshot: Adding the official Traefik Helm repository](../images/traefik-metallb/05-traefik-repo-add.png)
-
 ### 3.2. Update the Helm repositories
 
 ```bash
 helm repo update
 ```
 
-![Screenshot: Updating Helm repositories](../images/traefik-metallb/06-traefik-repo-update.png)
 
 ### 3.3. Search for the Traefik chart
 
@@ -78,7 +75,6 @@ helm repo update
 helm search repo traefik/traefik
 ```
 
-![Screenshot: Available Traefik Helm chart](../images/traefik-metallb/07-traefik-chart-search.png)
 
 Record the chart version shown in the output if you want to pin the version for a reproducible installation.
 
@@ -90,7 +86,8 @@ Download the default values:
 helm show values traefik/traefik > traefik-values-default.yaml
 ```
 
-![Screenshot: Downloading Traefik default values](../images/traefik-metallb/08-traefik-default-values.png)
+![Screenshot: Available Traefik Helm chart](../images/traefik-metallb/07-traefik-chart-search.png)
+
 
 Inspect the Service configuration:
 
@@ -124,7 +121,7 @@ If the namespace already exists, do not recreate it. Verify it instead:
 kubectl get namespace traefik
 ```
 
-![Screenshot: Verifying the Traefik namespace](../images/traefik-metallb/12-verify-traefik-namespace.png)
+
 
 ### 3.6. Install Traefik
 
@@ -210,7 +207,7 @@ This guide uses MetalLB Layer 2 mode, which announces IPv4 addresses on the loca
 helm repo add metallb https://metallb.github.io/metallb
 ```
 
-![Screenshot: Adding the official MetalLB Helm repository](../images/traefik-metallb/19-metallb-repo-add.png)
+
 
 ### 4.2. Update the Helm repositories
 
@@ -218,15 +215,15 @@ helm repo add metallb https://metallb.github.io/metallb
 helm repo update
 ```
 
-![Screenshot: Updating Helm repositories for MetalLB](../images/traefik-metallb/20-metallb-repo-update.png)
+
 
 ### 4.3. Create the MetalLB namespace
 
 ```bash
 kubectl create namespace metallb-system
 ```
+![Screenshot: Updating Helm repositories for MetalLB](../images/traefik-metallb/20-metallb-repo-update.png)
 
-![Screenshot: Creating the MetalLB namespace](../images/traefik-metallb/21-create-metallb-namespace.png)
 
 If the namespace already exists, verify it rather than creating it again:
 
@@ -248,7 +245,7 @@ kubectl label namespace metallb-system \
   --overwrite
 ```
 
-![Screenshot: Applying Pod Security Admission labels to MetalLB](../images/traefik-metallb/22-metallb-security-labels.png)
+
 
 These labels configure Pod Security Admission for this namespace. Apply them only when appropriate for your environment and security requirements.
 
@@ -258,8 +255,8 @@ These labels configure Pod Security Admission for this namespace. Apply them onl
 helm upgrade --install metallb metallb/metallb \
   --namespace metallb-system
 ```
+![Screenshot: Applying Pod Security Admission labels to MetalLB](../images/traefik-metallb/22-metallb-security-labels.png)
 
-![Screenshot: Installing MetalLB with Helm](../images/traefik-metallb/23-install-metallb.png)
 
 This command installs MetalLB or upgrades an existing release. The exact set of components depends on the chart version and configuration.
 
@@ -333,7 +330,6 @@ The `IPAddressPool` resource defines the IP addresses MetalLB can allocate. The 
 kubectl apply -f metallb-config.yaml
 ```
 
-![Screenshot: Applying the MetalLB IP address pool and L2 advertisement](../images/traefik-metallb/27-apply-metallb-config.png)
 
 ### 5.3. Verify the IP address pool
 
@@ -341,15 +337,14 @@ kubectl apply -f metallb-config.yaml
 kubectl get ipaddresspools -n metallb-system
 ```
 
-![Screenshot: MetalLB IP address pool](../images/traefik-metallb/28-ipaddresspool.png)
+
 
 ### 5.4. Verify the Layer 2 advertisement
 
 ```bash
 kubectl get l2advertisements -n metallb-system
 ```
-
-![Screenshot: MetalLB Layer 2 advertisement](../images/traefik-metallb/29-l2advertisement.png)
+![Screenshot: MetalLB IP address pool](../images/traefik-metallb/28-ipaddresspool.png)
 
 If your nodes have multiple network interfaces, verify which interface MetalLB uses to announce the addresses. The `interfaces` field can be configured in `L2Advertisement` when necessary, using the actual interface names from your nodes.
 
@@ -363,7 +358,7 @@ After MetalLB is installed and configured, check whether it assigns an external 
 kubectl get svc traefik -n traefik -w
 ```
 
-![Screenshot: Watching the Traefik external IP assignment](../images/traefik-metallb/30-watch-traefik-service.png)
+
 
 Wait until the `EXTERNAL-IP` field contains an address from the configured pool. Stop watching with `Ctrl+C` once the address has been assigned.
 
@@ -390,7 +385,7 @@ kubectl get svc traefik -n traefik
 kubectl describe svc traefik -n traefik
 ```
 
-![Screenshot: Traefik Service details and events](../images/traefik-metallb/32-describe-traefik-service.png)
+
 
 Verify the Service type, ports, endpoints, and any events indicating address allocation problems.
 
@@ -402,7 +397,7 @@ If the external IP remains `Pending`, inspect recent events in the Traefik names
 kubectl get events -n traefik --sort-by=.lastTimestamp
 ```
 
-![Screenshot: Traefik namespace events](../images/traefik-metallb/33-traefik-events.png)
+
 
 Check the MetalLB Pods and identify the controller:
 
@@ -418,7 +413,7 @@ Use the actual controller Pod name returned by the previous command to inspect i
 kubectl logs -n metallb-system CONTROLLER_POD_NAME --tail=100
 ```
 
-![Screenshot: MetalLB controller logs](../images/traefik-metallb/35-metallb-controller-logs.png)
+
 
 Replace `CONTROLLER_POD_NAME` with the actual Pod name. If the controller has multiple containers, specify the appropriate container using `-c CONTAINER_NAME`.
 
