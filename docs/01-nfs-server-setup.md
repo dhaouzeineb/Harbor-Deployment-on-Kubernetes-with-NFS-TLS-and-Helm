@@ -203,7 +203,7 @@ sudo exportfs -ra
 
 This command re-exports the configured directories without requiring a manual restart of the NFS service.
 
-![Screenshot: Apply the NFS export configuration](../images/nfs/10-exportfs.png)
+
 
 ### 4.4 Verify the active exports
 
@@ -237,7 +237,7 @@ ls -ld /srv/nfs/harbor
 
 Inspect the owner, group, and permission bits before making any changes.
 
-![Screenshot: Check the current NFS directory owner](../images/nfs/12-check-owner.png)
+
 
 ### 5.3 Set the directory owner when required
 
@@ -268,7 +268,7 @@ ls -ld /srv/nfs/harbor
 
 Confirm that the displayed owner and group match the intended configuration.
 
-![Screenshot: Verify the updated NFS directory ownership](../images/nfs/14-verify-owner.png)
+
 
 ## 6. Configure NFS Clients
 
@@ -326,7 +326,7 @@ The command specifies:
 
 The server must support NFSv4.1, and the export must be accessible to the client.
 
-![Screenshot: Mount the NFS share on the Kubernetes node](../images/nfs/18-mount-nfs.png)
+
 
 ### 6.5 Verify the mount
 
