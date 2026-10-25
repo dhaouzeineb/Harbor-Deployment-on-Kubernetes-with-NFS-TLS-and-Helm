@@ -1,10 +1,10 @@
 # 02 — Kubernetes Storage with NFS and Helm
 
-This guide explains how to deploy the NFS Subdirectory External Provisioner on a Kubernetes cluster using Helm. It also covers StorageClass creation, dynamic PersistentVolume provisioning, and storage validation before deploying Harbor.
+This guide explains how to deploy the NFS Subdirectory External Provisioner on a Kubernetes cluster using Helm. It covers dynamic PersistentVolume provisioning, StorageClass configuration, PVC validation, troubleshooting, and storage preparation for Harbor.
 
 ## 1. Architecture and Prerequisites
 
-The NFS server provides shared storage for the Kubernetes cluster. The NFS Subdirectory External Provisioner automatically creates subdirectories in the exported NFS directory when PersistentVolumeClaims request storage through the configured StorageClass.
+The NFS server provides shared storage for the Kubernetes cluster. The NFS Subdirectory External Provisioner automatically creates subdirectories inside the exported NFS directory when PersistentVolumeClaims request storage through the configured StorageClass.
 
 | Component | Configuration |
 |---|---|
@@ -25,32 +25,48 @@ Before proceeding, ensure that:
 
 ## 2. Add the Helm Repository
 
-Add the official NFS Subdirectory External Provisioner Helm repository:
+### 2.1. Add the official repository
+
+Run the following command on the Kubernetes master:
 
 ```bash
 helm repo add nfs-subdir-external-provisioner \
   https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+```
 
+![Screenshot: Helm repository added successfully](../images/kubernetes-storage/01-helm-repo-add.png)
+
+### 2.2. Update the repository index
+
+```bash
 helm repo update
 ```
 
-Verify that the chart is available:
+![Screenshot: Helm repository update](../images/kubernetes-storage/02-helm-repo-update.png)
+
+### 2.3. Verify chart availability
 
 ```bash
 helm search repo nfs-subdir-external-provisioner
 ```
 
-List the available chart versions:
+![Screenshot: Available NFS provisioner Helm chart](../images/kubernetes-storage/03-helm-search.png)
+
+### 2.4. List available chart versions
 
 ```bash
 helm search repo nfs-subdir-external-provisioner --versions
 ```
 
-Select a version from the returned list. Do not assume that a particular version is available without checking the repository.
+![Screenshot: Available Helm chart versions](../images/kubernetes-storage/04-helm-versions.png)
+
+Choose a version displayed by this command. Record the exact version because it will be used in the following steps.
 
 ## 3. Inspect the Chart Configuration
 
-Download the default values for the selected chart version:
+### 3.1. Download the default values
+
+Replace `VERSION` with the chart version selected in Section 2.
 
 ```bash
 helm show values \
@@ -59,49 +75,65 @@ helm show values \
   > nfs-values-default.yaml
 ```
 
-Replace `VERSION` with the version selected in the previous step.
+![Screenshot: Downloaded Helm chart values](../images/kubernetes-storage/05-helm-show-values.png)
 
-Inspect the NFS configuration:
+### 3.2. Inspect the NFS configuration
 
 ```bash
 grep -n -A25 '^nfs:' nfs-values-default.yaml
 ```
 
-Inspect the StorageClass configuration:
+![Screenshot: NFS configuration options](../images/kubernetes-storage/06-inspect-nfs-values.png)
+
+### 3.3. Inspect the StorageClass configuration
 
 ```bash
 grep -n -A35 '^storageClass:' nfs-values-default.yaml
 ```
 
-These commands help confirm the configuration keys supported by the selected chart version.
+![Screenshot: StorageClass configuration options](../images/kubernetes-storage/07-inspect-storageclass-values.png)
+
+These commands help identify the configuration keys supported by the selected chart version. Verify the options before installation instead of assuming that every chart version uses the same values.
 
 ## 4. Create the Namespace
 
-Create a dedicated namespace for the provisioner:
+### 4.1. Create the provisioner namespace
 
 ```bash
 kubectl create namespace storage-system
 ```
 
-If the namespace already exists, verify it instead:
+![Screenshot: storage-system namespace creation](../images/kubernetes-storage/08-create-namespace.png)
+
+If Kubernetes reports that the namespace already exists, continue with the verification step below.
+
+### 4.2. Verify the namespace
 
 ```bash
 kubectl get namespace storage-system
 ```
 
+![Screenshot: storage-system namespace status](../images/kubernetes-storage/09-verify-namespace.png)
+
+The namespace should have the `Active` status.
+
 ## 5. Install the NFS Provisioner
 
-The NFS Subdirectory External Provisioner dynamically provisions PersistentVolumes by creating subdirectories within the configured NFS export.
+The NFS Subdirectory External Provisioner dynamically provisions PersistentVolumes by creating subdirectories inside the configured NFS export.
 
-Set the chart version selected and verified in Section 2:
+### 5.1. Define the chart version
+
+Replace `VERSION` with the exact version verified in Section 2.
 
 ```bash
 CHART_VERSION="VERSION"
 ```
 
-Replace `VERSION` with the actual chart version.
+![Screenshot: Selected Helm chart version](../images/kubernetes-storage/10-set-chart-version.png)
 
-Install the provisioner:
+### 5.2. Install the provisioner
+
+The following command configures the NFS server, export path, StorageClass name, reclaim policy, and access mode.
 
 ```bash
 helm install nfs-harbor \
@@ -113,83 +145,111 @@ helm install nfs-harbor \
   --set storageClass.name=nfs-harbor \
   --set storageClass.defaultClass=false \
   --set storageClass.reclaimPolicy=Retain \
-  --set storageClass.accessModes[0]=ReadWriteMany
+  --set 'storageClass.accessModes[0]=ReadWriteMany'
 ```
 
-**Important:** Confirm that every configuration key matches the selected chart version. In particular, check the default values for `nfs`, `storageClass`, and `accessModes` before installation.
+![Screenshot: NFS provisioner Helm installation](../images/kubernetes-storage/11-install-provisioner.png)
 
-The installation creates the provisioner resources and the `nfs-harbor` StorageClass, provided the chart configuration is valid.
+**Important:** Confirm that the chart version supports all the specified options. If the release already exists, inspect it with `helm list -n storage-system` before deciding whether to install or upgrade it.
 
-The `Retain` reclaim policy helps prevent automatic reclamation of the underlying PersistentVolume when its claim is deleted. It does not replace regular backups.
+The `Retain` reclaim policy helps prevent automatic reclamation of the underlying PersistentVolume when its claim is deleted. It does not replace backups.
 
 ## 6. Verify the Installation
 
-Check the Helm release:
+### 6.1. Check the Helm release
 
 ```bash
 helm list -n storage-system
 ```
 
-Check the provisioner pods:
+![Screenshot: Installed Helm release](../images/kubernetes-storage/12-helm-list.png)
+
+### 6.2. Check the provisioner pods
 
 ```bash
 kubectl get pods -n storage-system -o wide
 ```
 
-Check the Deployment:
+![Screenshot: Provisioner pod status](../images/kubernetes-storage/13-get-provisioner-pods.png)
+
+The provisioner pod should become `Running` and ready.
+
+### 6.3. Check the Deployment
 
 ```bash
 kubectl get deployments -n storage-system
 ```
 
-Check the StorageClass:
+![Screenshot: Provisioner Deployment](../images/kubernetes-storage/14-get-deployments.png)
+
+### 6.4. Check the StorageClass
 
 ```bash
 kubectl get storageclass
 ```
 
-Inspect the StorageClass details:
+![Screenshot: Available StorageClasses](../images/kubernetes-storage/15-get-storageclass.png)
+
+The `nfs-harbor` StorageClass should appear in the output.
+
+### 6.5. Inspect the StorageClass details
 
 ```bash
 kubectl describe storageclass nfs-harbor
 ```
 
-Inspect recent events:
+![Screenshot: nfs-harbor StorageClass details](../images/kubernetes-storage/16-describe-storageclass.png)
+
+Verify the provisioner, reclaim policy, and other relevant settings.
+
+### 6.6. Inspect recent events
 
 ```bash
 kubectl get events -n storage-system \
   --sort-by=.lastTimestamp
 ```
 
-The provisioner pod should reach the `Running` state and become ready. The `nfs-harbor` StorageClass should also appear in the cluster.
+![Screenshot: Recent storage-system events](../images/kubernetes-storage/17-check-events.png)
 
-If the provisioner pod fails, retrieve its logs:
+Events can help identify image-pulling problems, scheduling errors, or other deployment issues.
 
-```bash
-kubectl logs -n storage-system deployment/DEPLOYMENT_NAME
-```
+### 6.7. Identify the Deployment name
 
-Replace `DEPLOYMENT_NAME` with the actual Deployment name returned by:
+If the provisioner pod fails, first retrieve the actual Deployment name:
 
 ```bash
 kubectl get deployments -n storage-system
 ```
 
-Do not proceed to the PVC test until the provisioner is operational.
+![Screenshot: Provisioner Deployment name](../images/kubernetes-storage/18-identify-deployment.png)
+
+### 6.8. Retrieve the provisioner logs
+
+Replace `DEPLOYMENT_NAME` with the actual Deployment name returned by the previous command.
+
+```bash
+kubectl logs -n storage-system deployment/DEPLOYMENT_NAME
+```
+
+![Screenshot: NFS provisioner logs](../images/kubernetes-storage/19-provisioner-logs.png)
+
+Do not continue to the PVC test until the provisioner is operational and the StorageClass exists.
 
 ## 7. Test Dynamic PersistentVolume Provisioning
 
-A running provisioner does not necessarily mean that it can successfully create and mount volumes. The following test validates the complete provisioning workflow.
+A running provisioner does not necessarily mean that it can successfully create and mount volumes. This test validates the complete provisioning workflow.
 
-### 7.1. Create the Test Manifest
+### 7.1. Create the test manifest
 
-On the Kubernetes master, create a file named `nfs-test.yaml`:
+On the Kubernetes master, create the file:
 
 ```bash
 nano nfs-test.yaml
 ```
 
-Add the following manifest:
+![Screenshot: Creating the NFS test manifest](../images/kubernetes-storage/20-create-test-manifest.png)
+
+Add the following YAML configuration to the file:
 
 ```yaml
 apiVersion: v1
@@ -227,53 +287,63 @@ spec:
         claimName: nfs-test-pvc
 ```
 
-This manifest creates:
+This manifest creates a PersistentVolumeClaim requesting `1Gi` and a Pod that mounts the claim at `/data` and writes a test file.
 
-- A PersistentVolumeClaim requesting `1Gi` of storage.
-- A Pod that mounts the claim at `/data`.
-- A test file written to the mounted volume.
+Save the file and exit the editor.
 
-### 7.2. Apply the Manifest
+### 7.2. Apply the manifest
 
 ```bash
 kubectl apply -f nfs-test.yaml
 ```
 
-Check the PersistentVolumeClaim:
+![Screenshot: Applying the NFS test manifest](../images/kubernetes-storage/21-apply-test-manifest.png)
+
+### 7.3. Check the PersistentVolumeClaim
 
 ```bash
 kubectl get pvc nfs-test-pvc
 ```
 
-Check the PersistentVolumes:
+![Screenshot: PVC status](../images/kubernetes-storage/22-check-pvc.png)
+
+The PVC should eventually reach the `Bound` state.
+
+### 7.4. Check the PersistentVolumes
 
 ```bash
 kubectl get pv
 ```
 
-The PVC should eventually reach the `Bound` state.
+![Screenshot: Dynamically provisioned PersistentVolume](../images/kubernetes-storage/23-check-pv.png)
 
-Check the Pod:
+Verify that the volume associated with `nfs-test-pvc` exists and is bound.
+
+### 7.5. Check the test Pod
 
 ```bash
 kubectl get pod nfs-test-pod -o wide
 ```
 
+![Screenshot: NFS test Pod status](../images/kubernetes-storage/24-check-test-pod.png)
+
 The Pod should reach the `Running` state.
 
-### 7.3. Verify the Written Data
-
-Check the Pod logs:
+### 7.6. Check the Pod logs
 
 ```bash
 kubectl logs nfs-test-pod
 ```
 
-Read the test file directly:
+![Screenshot: NFS test Pod logs](../images/kubernetes-storage/25-test-pod-logs.png)
+
+### 7.7. Read the test file
 
 ```bash
 kubectl exec nfs-test-pod -- cat /data/test.txt
 ```
+
+![Screenshot: Reading the test file from the mounted volume](../images/kubernetes-storage/26-verify-test-file.png)
 
 Expected output:
 
@@ -281,64 +351,91 @@ Expected output:
 NFS fonctionne
 ```
 
-You can also verify that the file exists on the NFS server:
+This confirms that the test Pod can write to and read from the mounted volume.
+
+### 7.8. Verify the file on the NFS server
+
+Run this command on the NFS server, not on the Kubernetes master unless they are the same machine:
 
 ```bash
 sudo find /srv/nfs/harbor -type f -name test.txt
 ```
 
+![Screenshot: Test file located on the NFS server](../images/kubernetes-storage/27-verify-nfs-server.png)
+
 The exact directory depends on the subdirectory created by the provisioner.
 
-**Storage capacity note:** The `1Gi` request in this PVC does not, by itself, enforce a strict physical quota on the NFS share. Monitor the actual available disk space on the NFS server.
+**Storage capacity note:** The `1Gi` request does not enforce a strict physical quota on the NFS share. Monitor the actual free disk space on the NFS server.
 
-### 7.4. Troubleshooting the PVC Test
+## 8. Troubleshooting the PVC Test
 
-If the PVC remains `Pending`, inspect the claim and its events:
+### 8.1. Inspect a PVC that remains Pending
 
 ```bash
 kubectl describe pvc nfs-test-pvc
+```
+
+![Screenshot: PVC events and troubleshooting details](../images/kubernetes-storage/28-describe-pvc.png)
+
+### 8.2. Inspect recent cluster events
+
+```bash
 kubectl get events --sort-by=.lastTimestamp
 ```
 
-If the Pod fails to start, inspect its status and events:
+![Screenshot: Kubernetes events during troubleshooting](../images/kubernetes-storage/29-troubleshooting-events.png)
+
+### 8.3. Inspect the test Pod
 
 ```bash
 kubectl describe pod nfs-test-pod
+```
+
+![Screenshot: Test Pod events and status](../images/kubernetes-storage/30-describe-test-pod.png)
+
+### 8.4. Retrieve the test Pod logs
+
+```bash
 kubectl logs nfs-test-pod
 ```
 
-Check the provisioner logs and confirm that the NFS server address, export path, network connectivity, and directory permissions are correct.
+![Screenshot: Test Pod logs during troubleshooting](../images/kubernetes-storage/31-troubleshooting-pod-logs.png)
 
-## 8. Clean Up the Test Resources
+If the PVC or Pod fails, verify:
 
-After verifying that the test succeeded, delete the test Pod and PVC:
+- The NFS server address and export path.
+- Network connectivity between the Kubernetes nodes and the NFS server.
+- NFS directory permissions.
+- Provisioner pod status and logs.
+- The StorageClass name and configuration.
+
+## 9. Clean Up the Test Resources
+
+Only perform this cleanup after completing the test and confirming that the data is no longer needed.
+
+### 9.1. Delete the test Pod
 
 ```bash
 kubectl delete pod nfs-test-pod
+```
+
+![Screenshot: Test Pod deletion](../images/kubernetes-storage/32-delete-test-pod.png)
+
+### 9.2. Delete the test PVC
+
+```bash
 kubectl delete pvc nfs-test-pvc
 ```
 
-Because the StorageClass uses the `Retain` reclaim policy, the PersistentVolume may remain in the `Released` state after the PVC is deleted. This is expected.
+![Screenshot: Test PVC deletion](../images/kubernetes-storage/33-delete-test-pvc.png)
+
+Because the StorageClass uses the `Retain` reclaim policy, the PersistentVolume may remain in the `Released` state after its claim is deleted. This is expected.
 
 Do not manually delete the PersistentVolume or remove its NFS directory until you have confirmed that it contains only disposable test data.
 
-## 9. Prepare Storage for Harbor
+## 10. Prepare Storage for Harbor
 
 Once the PVC test succeeds, the NFS provisioner is ready for the next stage of the deployment.
-
-Harbor contains multiple components with different storage requirements. The registry stores container images, while other components may store job logs, database data, Redis data, and vulnerability-scanning data, depending on the chosen deployment configuration.
-
-Before installing Harbor, inspect the values file for the exact Harbor Helm chart version and configure the persistence settings required by the selected architecture.
-
-Pay particular attention to:
-
-- Registry persistence and its StorageClass.
-- Jobservice persistence and its StorageClass.
-- Database and Redis persistence settings.
-- The required access modes for each PersistentVolumeClaim.
-- Backup, retention, and recovery requirements.
-
-Do not assume that every Harbor component can use the same storage configuration. Verify the chart values and the requirements of the selected Harbor deployment mode.
 
 
 ## References
