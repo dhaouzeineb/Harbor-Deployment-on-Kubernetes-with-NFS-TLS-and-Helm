@@ -51,21 +51,6 @@ kubectl get pods -A
 
 Review the output and investigate any critical Pods that are not running as expected.
 
-### 2.3. Verify Helm
-
-```bash
-helm version
-```
-
-![Screenshot: Installed Helm version](../images/traefik-metallb/03-helm-version.png)
-
-### 2.4. Verify the Kubernetes client
-
-```bash
-kubectl version
-```
-
-![Screenshot: Kubernetes client and server versions](../images/traefik-metallb/04-kubectl-version.png)
 
 ## 3. Install Traefik with Helm
 
