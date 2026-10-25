@@ -120,7 +120,6 @@ sudo mkdir -p /srv/nfs/harbor
 
 The `-p` option creates missing parent directories and does not report an error if the directory already exists.
 
-![Screenshot: Create the Harbor storage directory](../images/nfs/05-create-directory.png)
 
 ### 3.2 Check available disk space
 
@@ -146,7 +145,7 @@ ls -ld /srv/nfs/harbor
 
 Record the initial permissions before configuring access for the NFS clients.
 
-![Screenshot: Inspect the shared directory permissions](../images/nfs/07-directory-permissions.png)
+![Screenshot: Inspect the shared directory permissions](../images/nfs/007-directory-permissions.png)
 
 ## 4. Configure the NFS Export
 
