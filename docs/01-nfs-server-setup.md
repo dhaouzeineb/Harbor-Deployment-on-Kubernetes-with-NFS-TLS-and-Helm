@@ -94,7 +94,7 @@ sudo systemctl enable --now nfs-kernel-server
 - `enable` configures the service to start automatically during system startup.
 - `--now` starts the service immediately.
 
-![Screenshot: Enable and start the NFS service](../images/nfs/03-enable-nfs.png)
+
 
 ### 2.4 Verify the service status
 
