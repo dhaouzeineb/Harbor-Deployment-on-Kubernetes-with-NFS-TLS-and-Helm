@@ -161,7 +161,6 @@ sudo cp /etc/exports /etc/exports.bak
 
 This backup provides a reference for restoring the previous configuration if necessary.
 
-![Screenshot: Back up the NFS exports configuration](../images/nfs/08-backup-exports.png)
 
 ### 4.2 Edit `/etc/exports`
 
