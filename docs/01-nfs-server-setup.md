@@ -283,7 +283,7 @@ Confirm that the displayed owner and group match the intended configuration.
 sudo apt update
 ```
 
-![Screenshot: Update packages on the Kubernetes node](../images/nfs/15-node-apt-update.png)
+
 
 ### 6.2 Install the NFS client utilities
 
@@ -305,7 +305,7 @@ sudo mkdir -p /mnt/nfs-test
 
 This directory is a temporary test mount point. It is separate from the Kubernetes volumes that will be created later.
 
-![Screenshot: Create the NFS test mount point](../images/nfs/17-create-mountpoint.png)
+
 
 ### 6.4 Mount the NFS share
 
