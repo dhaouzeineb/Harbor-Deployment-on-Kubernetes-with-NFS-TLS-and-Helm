@@ -69,7 +69,7 @@ sudo apt update
 
 This command refreshes the list of available packages from the configured Ubuntu repositories.
 
-![Screenshot: Update the NFS server package index](../images/nfs/01-apt-update.png)
+
 
 ### 2.2 Install the NFS server package
 
@@ -81,7 +81,7 @@ sudo apt install -y nfs-kernel-server
 
 The `nfs-kernel-server` package provides the services required to export directories to remote NFS clients.
 
-![Screenshot: Install the NFS server package](../images/nfs/02-install-nfs.png)
+
 
 ### 2.3 Enable and start the service
 
