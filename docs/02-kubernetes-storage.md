@@ -34,7 +34,7 @@ helm repo add nfs-subdir-external-provisioner \
   https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
 ```
 
-![Screenshot: Helm repository added successfully](../images/kubernetes-storage/01-helm-repo-add.png)
+
 
 ### 2.2. Update the repository index
 
@@ -42,7 +42,7 @@ helm repo add nfs-subdir-external-provisioner \
 helm repo update
 ```
 
-![Screenshot: Helm repository update](../images/kubernetes-storage/02-helm-repo-update.png)
+
 
 ### 2.3. Verify chart availability
 
@@ -50,7 +50,6 @@ helm repo update
 helm search repo nfs-subdir-external-provisioner
 ```
 
-![Screenshot: Available NFS provisioner Helm chart](../images/kubernetes-storage/03-helm-search.png)
 
 ### 2.4. List available chart versions
 
@@ -58,7 +57,6 @@ helm search repo nfs-subdir-external-provisioner
 helm search repo nfs-subdir-external-provisioner --versions
 ```
 
-![Screenshot: Available Helm chart versions](../images/kubernetes-storage/04-helm-versions.png)
 
 Choose a version displayed by this command. Record the exact version because it will be used in the following steps.
 
@@ -102,9 +100,6 @@ These commands help identify the configuration keys supported by the selected ch
 ```bash
 kubectl create namespace storage-system
 ```
-
-![Screenshot: storage-system namespace creation](../images/kubernetes-storage/08-create-namespace.png)
-
 If Kubernetes reports that the namespace already exists, continue with the verification step below.
 
 ### 4.2. Verify the namespace
@@ -113,7 +108,6 @@ If Kubernetes reports that the namespace already exists, continue with the verif
 kubectl get namespace storage-system
 ```
 
-![Screenshot: storage-system namespace status](../images/kubernetes-storage/09-verify-namespace.png)
 
 The namespace should have the `Active` status.
 
@@ -129,7 +123,6 @@ Replace `VERSION` with the exact version verified in Section 2.
 CHART_VERSION="VERSION"
 ```
 
-![Screenshot: Selected Helm chart version](../images/kubernetes-storage/10-set-chart-version.png)
 
 ### 5.2. Install the provisioner
 
@@ -162,7 +155,6 @@ The `Retain` reclaim policy helps prevent automatic reclamation of the underlyin
 helm list -n storage-system
 ```
 
-![Screenshot: Installed Helm release](../images/kubernetes-storage/12-helm-list.png)
 
 ### 6.2. Check the provisioner pods
 
@@ -170,7 +162,7 @@ helm list -n storage-system
 kubectl get pods -n storage-system -o wide
 ```
 
-![Screenshot: Provisioner pod status](../images/kubernetes-storage/13-get-provisioner-pods.png)
+
 
 The provisioner pod should become `Running` and ready.
 
@@ -180,7 +172,7 @@ The provisioner pod should become `Running` and ready.
 kubectl get deployments -n storage-system
 ```
 
-![Screenshot: Provisioner Deployment](../images/kubernetes-storage/14-get-deployments.png)
+
 
 ### 6.4. Check the StorageClass
 
@@ -198,7 +190,6 @@ The `nfs-harbor` StorageClass should appear in the output.
 kubectl describe storageclass nfs-harbor
 ```
 
-![Screenshot: nfs-harbor StorageClass details](../images/kubernetes-storage/16-describe-storageclass.png)
 
 Verify the provisioner, reclaim policy, and other relevant settings.
 
@@ -221,7 +212,7 @@ If the provisioner pod fails, first retrieve the actual Deployment name:
 kubectl get deployments -n storage-system
 ```
 
-![Screenshot: Provisioner Deployment name](../images/kubernetes-storage/18-identify-deployment.png)
+
 
 ### 6.8. Retrieve the provisioner logs
 
@@ -230,8 +221,6 @@ Replace `DEPLOYMENT_NAME` with the actual Deployment name returned by the previo
 ```bash
 kubectl logs -n storage-system deployment/DEPLOYMENT_NAME
 ```
-
-![Screenshot: NFS provisioner logs](../images/kubernetes-storage/19-provisioner-logs.png)
 
 Do not continue to the PVC test until the provisioner is operational and the StorageClass exists.
 
@@ -297,7 +286,6 @@ Save the file and exit the editor.
 kubectl apply -f nfs-test.yaml
 ```
 
-![Screenshot: Applying the NFS test manifest](../images/kubernetes-storage/21-apply-test-manifest.png)
 
 ### 7.3. Check the PersistentVolumeClaim
 
@@ -305,7 +293,7 @@ kubectl apply -f nfs-test.yaml
 kubectl get pvc nfs-test-pvc
 ```
 
-![Screenshot: PVC status](../images/kubernetes-storage/22-check-pvc.png)
+
 
 The PVC should eventually reach the `Bound` state.
 
@@ -315,7 +303,6 @@ The PVC should eventually reach the `Bound` state.
 kubectl get pv
 ```
 
-![Screenshot: Dynamically provisioned PersistentVolume](../images/kubernetes-storage/23-check-pv.png)
 
 Verify that the volume associated with `nfs-test-pvc` exists and is bound.
 
@@ -335,7 +322,6 @@ The Pod should reach the `Running` state.
 kubectl logs nfs-test-pod
 ```
 
-![Screenshot: NFS test Pod logs](../images/kubernetes-storage/25-test-pod-logs.png)
 
 ### 7.7. Read the test file
 
@@ -360,9 +346,6 @@ Run this command on the NFS server, not on the Kubernetes master unless they are
 ```bash
 sudo find /srv/nfs/harbor -type f -name test.txt
 ```
-
-![Screenshot: Test file located on the NFS server](../images/kubernetes-storage/27-verify-nfs-server.png)
-
 The exact directory depends on the subdirectory created by the provisioner.
 
 **Storage capacity note:** The `1Gi` request does not enforce a strict physical quota on the NFS share. Monitor the actual free disk space on the NFS server.
