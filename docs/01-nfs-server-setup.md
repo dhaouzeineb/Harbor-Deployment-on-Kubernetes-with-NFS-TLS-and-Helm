@@ -351,19 +351,19 @@ The following tests verify that both nodes can access the same shared filesystem
 On the master node, create a test file:
 
 ```bash
-sudo touch /mnt/nfs-test/test-from-master
+sudo touch /mnt/nfs-test/test-from-node
 ```
 
 If the command fails with `Permission denied`, inspect the directory permissions, the identity mapping applied by `root_squash`, and the export configuration.
 
 Do not change the security settings blindly to force the test to succeed.
 
-![Screenshot: Test writing to NFS from the master](../images/nfs/20-write-master.png)
+
 
 ### 7.2 Verify the master test file
 
 ```bash
-ls -l /mnt/nfs-test/test-from-master
+ls -l /mnt/nfs-test/test-from-node
 ```
 
 Confirm that the file exists and inspect its ownership.
@@ -378,7 +378,7 @@ On the worker node, create a second test file:
 sudo touch /mnt/nfs-test/test-from-worker
 ```
 
-![Screenshot: Test writing to NFS from the worker](../images/nfs/22-write-worker.png)
+
 
 ### 7.4 Verify the worker test file
 
@@ -386,7 +386,7 @@ sudo touch /mnt/nfs-test/test-from-worker
 ls -l /mnt/nfs-test/test-from-worker
 ```
 
-![Screenshot: Verify the worker test file](../images/nfs/23-check-worker-file.png)
+
 
 ### 7.5 Verify both files on the NFS server
 
@@ -396,7 +396,7 @@ Return to the NFS server and list the shared directory:
 ls -l /srv/nfs/harbor
 ```
 
-Both `test-from-master` and `test-from-worker` should be visible.
+Both `test-from-node` and `test-from-worker` should be visible.
 
 This confirms that the two Kubernetes nodes are accessing the same shared directory on the NFS server.
 
