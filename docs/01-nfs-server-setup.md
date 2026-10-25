@@ -295,7 +295,7 @@ sudo apt install -y nfs-common
 
 The `nfs-common` package provides the client utilities needed to mount NFS shares.
 
-![Screenshot: Install NFS client utilities](../images/nfs/16-install-nfs-common.png)
+
 
 ### 6.3 Create the mount point
 
