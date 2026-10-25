@@ -4,17 +4,6 @@ This document describes how to install and configure an NFS (Network File System
 
 The NFS server is configured separately from the Kubernetes cluster. The master and worker nodes are authorized to access the exported directory, which will later be used by the NFS Subdirectory External Provisioner.
 
-## Table of Contents
-
-- [1. Architecture and Prerequisites](#1-architecture-and-prerequisites)
-- [2. Install the NFS Server](#2-install-the-nfs-server)
-- [3. Create the Shared Directory](#3-create-the-shared-directory)
-- [4. Configure the NFS Export](#4-configure-the-nfs-export)
-- [5. Configure Directory Permissions](#5-configure-directory-permissions)
-- [6. Configure NFS Clients](#6-configure-nfs-clients)
-- [7. Test NFS Connectivity and Write Access](#7-test-nfs-connectivity-and-write-access)
-- [8. Troubleshooting](#8-troubleshooting)
-- [9. Completion Criteria](#9-completion-criteria)
 
 ## 1. Architecture and Prerequisites
 
