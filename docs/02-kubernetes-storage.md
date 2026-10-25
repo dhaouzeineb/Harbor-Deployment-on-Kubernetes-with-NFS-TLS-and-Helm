@@ -180,7 +180,6 @@ kubectl get deployments -n storage-system
 kubectl get storageclass
 ```
 
-![Screenshot: Available StorageClasses](../images/kubernetes-storage/15-get-storageclass.png)
 
 The `nfs-harbor` StorageClass should appear in the output.
 
@@ -236,7 +235,7 @@ On the Kubernetes master, create the file:
 nano nfs-test.yaml
 ```
 
-![Screenshot: Creating the NFS test manifest](../images/kubernetes-storage/20-create-test-manifest.png)
+
 
 Add the following YAML configuration to the file:
 
@@ -358,15 +357,13 @@ The exact directory depends on the subdirectory created by the provisioner.
 kubectl describe pvc nfs-test-pvc
 ```
 
-![Screenshot: PVC events and troubleshooting details](../images/kubernetes-storage/28-describe-pvc.png)
-
 ### 8.2. Inspect recent cluster events
 
 ```bash
 kubectl get events --sort-by=.lastTimestamp
 ```
 
-![Screenshot: Kubernetes events during troubleshooting](../images/kubernetes-storage/29-troubleshooting-events.png)
+
 
 ### 8.3. Inspect the test Pod
 
@@ -374,7 +371,6 @@ kubectl get events --sort-by=.lastTimestamp
 kubectl describe pod nfs-test-pod
 ```
 
-![Screenshot: Test Pod events and status](../images/kubernetes-storage/30-describe-test-pod.png)
 
 ### 8.4. Retrieve the test Pod logs
 
@@ -382,7 +378,7 @@ kubectl describe pod nfs-test-pod
 kubectl logs nfs-test-pod
 ```
 
-![Screenshot: Test Pod logs during troubleshooting](../images/kubernetes-storage/31-troubleshooting-pod-logs.png)
+
 
 If the PVC or Pod fails, verify:
 
@@ -402,7 +398,7 @@ Only perform this cleanup after completing the test and confirming that the data
 kubectl delete pod nfs-test-pod
 ```
 
-![Screenshot: Test Pod deletion](../images/kubernetes-storage/32-delete-test-pod.png)
+
 
 ### 9.2. Delete the test PVC
 
