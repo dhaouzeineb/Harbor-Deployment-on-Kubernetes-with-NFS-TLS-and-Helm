@@ -168,7 +168,6 @@ Depending on the chart configuration, the Service may also expose NodePorts such
 ```bash
 kubectl get ingressclass
 ```
-
 ![Screenshot: Available Kubernetes IngressClasses](../images/traefik-metallb/16-ingressclass-list.png)
 
 The expected IngressClass is `traefik`, provided that IngressClass creation is enabled in the chart configuration.
