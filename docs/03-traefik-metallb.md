@@ -74,7 +74,7 @@ helm repo update
 ```bash
 helm search repo traefik/traefik
 ```
-
+![Screenshot: Creating the Traefik namespace](../images/traefik-metallb/03-create-traefik-helm.png)
 
 Record the chart version shown in the output if you want to pin the version for a reproducible installation.
 
@@ -113,7 +113,7 @@ The exact configuration keys can vary by chart version. Verify the values suppor
 kubectl create namespace traefik
 ```
 
-![Screenshot: Creating the Traefik namespace](../images/traefik-metallb/11-create-traefik-namespace.png)
+
 
 If the namespace already exists, do not recreate it. Verify it instead:
 
