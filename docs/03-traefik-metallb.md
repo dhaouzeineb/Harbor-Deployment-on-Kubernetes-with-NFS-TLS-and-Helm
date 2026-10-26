@@ -293,7 +293,6 @@ Create the file:
 nano metallb-config.yaml
 ```
 
-![Screenshot: Creating the MetalLB configuration file](../images/traefik-metallb/26-create-metallb-config.png)
 
 Add the following configuration, replacing the example address range if necessary:
 
