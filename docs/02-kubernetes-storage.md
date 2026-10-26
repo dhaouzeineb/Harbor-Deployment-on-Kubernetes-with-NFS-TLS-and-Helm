@@ -1,449 +1,426 @@
-# Configure a Local DNS Server with BIND9 for Harbor on Kubernetes
+# 02 — Kubernetes Storage with NFS and Helm
 
-## Overview
+This guide explains how to deploy the NFS Subdirectory External Provisioner on a Kubernetes cluster using Helm. It covers dynamic PersistentVolume provisioning, StorageClass configuration, PVC validation, troubleshooting, and storage preparation for Harbor.
 
-This guide explains how to install and configure BIND9 on an Ubuntu server to resolve the Harbor hostname `harbor.k8s.local` to the external IP address assigned to Traefik by MetalLB.
+## 1. Architecture and Prerequisites
 
-The objective is to allow clients on the local network to resolve the Harbor hostname through the local DNS server.
+The NFS server provides shared storage for the Kubernetes cluster. The NFS Subdirectory External Provisioner automatically creates subdirectories inside the exported NFS directory when PersistentVolumeClaims request storage through the configured StorageClass.
 
-**Scope:** This guide covers BIND9 installation, DNS zone configuration, client DNS configuration, and DNS resolution tests.
-
-## 1. Lab Environment
-
-| Component | Example value |
+| Component | Configuration |
 |---|---|
-| DNS server | `192.168.1.20` |
-| Local network | `192.168.1.0/24` |
-| Harbor hostname | `harbor.k8s.local` |
-| Traefik external IP | `192.168.1.240` |
-| DNS server interface | `ens33` |
-| Example Windows client | `192.168.1.224` |
+| Kubernetes master | `192.168.1.10` |
+| Kubernetes worker | `192.168.1.11` |
+| NFS server | `192.168.1.20` |
+| NFS export path | `/srv/nfs/harbor` |
+| Provisioner namespace | `storage-system` |
+| StorageClass | `nfs-harbor` |
+| Access mode | `ReadWriteMany` |
 
-**Important:** Replace the example values with those used in your environment. In particular, verify the actual external IP address assigned to Traefik by MetalLB.
+Before proceeding, ensure that:
 
-## 2. Identify the Traefik External IP
+- The NFS server is configured and accessible from both Kubernetes nodes.
+- Write tests from the master and worker have succeeded.
+- `kubectl` is configured to access the cluster.
+- Helm is installed on the master node.
 
-Run the following command on a machine with access to the Kubernetes cluster:
+## 2. Add the Helm Repository
 
-```bash
-kubectl get svc -n traefik
-```
+### 2.1. Add the official repository
 
-Identify the Traefik Service and note its `EXTERNAL-IP`. This address will be used in the DNS zone file.
-
-![Screenshot: Traefik External IP](../images/dns/01-traefik-external-ip.png)
-
-If the external IP is shown as `<pending>`, check the MetalLB configuration and IP address pool before continuing.
-
-## 3. Check the DNS Server Network Configuration
-
-On the Ubuntu server that will host BIND9, run:
+Run the following command on the Kubernetes master:
 
 ```bash
-ip -br address
-ip route
-nmcli connection show
+helm repo add nfs-subdir-external-provisioner \
+  https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
 ```
 
-![Screenshot: DNS Server Network Configuration](../images/dns/02-dns-server-network.png)
 
-Confirm the DNS server's IP address and identify the correct network interface. The examples in this guide use `192.168.1.20` as the DNS server address.
 
-## 4. Install BIND9
-
-Update the package index:
+### 2.2. Update the repository index
 
 ```bash
-sudo apt update
+helm repo update
 ```
 
-![Screenshot: APT Package Update](../images/dns/03-apt-update.png)
 
-Install BIND9 and the DNS diagnostic utilities:
+
+### 2.3. Verify chart availability
 
 ```bash
-sudo apt install -y bind9 bind9-utils dnsutils
+helm search repo nfs-subdir-external-provisioner
 ```
 
-![Screenshot: BIND9 Installation](../images/dns/04-bind9-installation.png)
 
-Check the service status:
+### 2.4. List available chart versions
 
 ```bash
-systemctl status named --no-pager
+helm search repo nfs-subdir-external-provisioner --versions
 ```
 
-![Screenshot: BIND9 Service Status](../images/dns/05-bind9-service-status.png)
 
-If the `named` service is not found, try:
+Choose a version displayed by this command. Record the exact version because it will be used in the following steps.
+
+## 3. Inspect the Chart Configuration
+
+### 3.1. Download the default values
+
+Replace `VERSION` with the chart version selected in Section 2.
 
 ```bash
-systemctl status bind9 --no-pager
+helm show values \
+  nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+  --version VERSION \
+  > nfs-values-default.yaml
 ```
 
-Use the service name that exists on your system in the following steps.
+![Screenshot: Downloaded Helm chart values](../images/kubernetes-storage/05-helm-show-values.png)
 
-## 5. Configure BIND9 Options
-
-Back up the original configuration:
+### 3.2. Inspect the NFS configuration
 
 ```bash
-sudo cp /etc/bind/named.conf.options /etc/bind/named.conf.options.bak
+grep -n -A25 '^nfs:' nfs-values-default.yaml
 ```
 
-![Screenshot: BIND9 Options Backup](../images/dns/06-bind9-options-backup.png)
+![Screenshot: NFS configuration options](../images/kubernetes-storage/06-inspect-nfs-values.png)
 
-Open the configuration file:
+### 3.3. Inspect the StorageClass configuration
 
 ```bash
-sudo nano /etc/bind/named.conf.options
+grep -n -A35 '^storageClass:' nfs-values-default.yaml
 ```
 
-![Screenshot: Editing BIND9 Options](../images/dns/07-bind9-options-editor.png)
+![Screenshot: StorageClass configuration options](../images/kubernetes-storage/07-inspect-storageclass-values.png)
 
-Configure BIND9 with the following settings. Adjust the IP address and trusted subnet if your network is different.
+These commands help identify the configuration keys supported by the selected chart version. Verify the options before installation instead of assuming that every chart version uses the same values.
 
-```conf
-acl "trusted" {
-    127.0.0.1;
-    192.168.1.0/24;
-};
+## 4. Create the Namespace
 
-options {
-    directory "/var/cache/bind";
-
-    listen-on {
-        127.0.0.1;
-        192.168.1.20;
-    };
-
-    listen-on-v6 { none; };
-
-    recursion yes;
-    allow-query { trusted; };
-    allow-recursion { trusted; };
-
-    forwarders {
-        1.1.1.1;
-        8.8.8.8;
-    };
-
-    forward only;
-    dnssec-validation auto;
-};
-```
-
-![Screenshot: BIND9 Options Configuration](../images/dns/08-bind9-options.png)
-
-This configuration allows DNS queries from localhost and the specified local network. The forwarders are used to resolve DNS queries that are not answered by the local zone.
-
-**Security note:** Restrict access to your actual LAN. Do not expose a recursive DNS resolver to untrusted networks.
-
-## 6. Declare the DNS Zone
-
-Back up the local configuration file:
+### 4.1. Create the provisioner namespace
 
 ```bash
-sudo cp /etc/bind/named.conf.local /etc/bind/named.conf.local.bak
+kubectl create namespace storage-system
 ```
+If Kubernetes reports that the namespace already exists, continue with the verification step below.
 
-![Screenshot: BIND9 Local Configuration Backup](../images/dns/09-bind9-local-backup.png)
-
-Edit the file:
+### 4.2. Verify the namespace
 
 ```bash
-sudo nano /etc/bind/named.conf.local
+kubectl get namespace storage-system
 ```
 
-![Screenshot: Editing the Local DNS Configuration](../images/dns/10-bind9-local-editor.png)
 
-Add the following zone declaration:
+The namespace should have the `Active` status.
 
-```conf
-zone "k8s.local" {
-    type primary;
-    file "/etc/bind/db.k8s.local";
-    allow-query { trusted; };
-    allow-update { none; };
-};
-```
+## 5. Install the NFS Provisioner
 
-![Screenshot: DNS Zone Declaration](../images/dns/11-dns-zone-declaration.png)
+The NFS Subdirectory External Provisioner dynamically provisions PersistentVolumes by creating subdirectories inside the configured NFS export.
 
-This declares `k8s.local` as a primary DNS zone and specifies the file containing its DNS records.
+### 5.1. Define the chart version
 
-## 7. Create the DNS Zone File
-
-Create the zone file:
+Replace `VERSION` with the exact version verified in Section 2.
 
 ```bash
-sudo nano /etc/bind/db.k8s.local
+CHART_VERSION="VERSION"
 ```
 
-![Screenshot: Creating the DNS Zone File](../images/dns/12-dns-zone-file-editor.png)
 
-Add the following records:
+### 5.2. Install the provisioner
 
-```dns
-$TTL 86400
-@   IN  SOA ns.k8s.local. admin.k8s.local. (
-        2026102601 ; Serial
-        3600       ; Refresh
-        1800       ; Retry
-        604800     ; Expire
-        86400      ; Negative Cache TTL
-)
-
-@       IN  NS  ns.k8s.local.
-ns      IN  A   192.168.1.20
-harbor  IN  A   192.168.1.240
-```
-
-![Screenshot: DNS Zone File Records](../images/dns/13-dns-zone-file.png)
-
-**Important:** Replace `192.168.1.240` with the actual Traefik external IP identified in Step 2. The `harbor` record must point to Traefik, not directly to the DNS server.
-
-If you edit the zone later, increment the SOA serial number.
-
-Set the file ownership and permissions:
+The following command configures the NFS server, export path, StorageClass name, reclaim policy, and access mode.
 
 ```bash
-sudo chown root:bind /etc/bind/db.k8s.local
-sudo chmod 644 /etc/bind/db.k8s.local
+helm install nfs-harbor \
+  nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+  --namespace storage-system \
+  --version "$CHART_VERSION" \
+  --set nfs.server=192.168.1.20 \
+  --set nfs.path=/srv/nfs/harbor \
+  --set storageClass.name=nfs-harbor \
+  --set storageClass.defaultClass=false \
+  --set storageClass.reclaimPolicy=Retain \
+  --set 'storageClass.accessModes[0]=ReadWriteMany'
 ```
 
-![Screenshot: DNS Zone File Permissions](../images/dns/14-zone-file-permissions.png)
+![Screenshot: NFS provisioner Helm installation](../images/kubernetes-storage/11-install-provisioner.png)
 
-**Note about `.local`:** The `.local` suffix is reserved for Multicast DNS (mDNS). Some operating systems may handle `.local` names differently from ordinary DNS queries. This guide retains `harbor.k8s.local` for the example environment. For a new deployment, consider using a subdomain of a domain you own or `home.arpa` for a home network.
+**Important:** Confirm that the chart version supports all the specified options. If the release already exists, inspect it with `helm list -n storage-system` before deciding whether to install or upgrade it.
 
-## 8. Validate the BIND9 Configuration
+The `Retain` reclaim policy helps prevent automatic reclamation of the underlying PersistentVolume when its claim is deleted. It does not replace backups.
 
-Check the main configuration:
+## 6. Verify the Installation
+
+### 6.1. Check the Helm release
 
 ```bash
-sudo named-checkconf
+helm list -n storage-system
 ```
 
-![Screenshot: BIND9 Configuration Validation](../images/dns/15-named-checkconf.png)
 
-No output normally indicates that the configuration syntax is valid.
-
-Validate the DNS zone:
+### 6.2. Check the provisioner pods
 
 ```bash
-sudo named-checkzone k8s.local /etc/bind/db.k8s.local
+kubectl get pods -n storage-system -o wide
 ```
 
-![Screenshot: DNS Zone Validation](../images/dns/16-named-checkzone.png)
 
-The output should confirm that the zone loaded successfully and report `OK`.
 
-Correct any reported errors before restarting BIND9.
+The provisioner pod should become `Running` and ready.
 
-## 9. Restart BIND9 and Check Its Status
-
-If the service is named `named`, run:
+### 6.3. Check the Deployment
 
 ```bash
-sudo systemctl restart named
-sudo systemctl status named --no-pager
+kubectl get deployments -n storage-system
 ```
 
-![Screenshot: BIND9 Restart and Service Status](../images/dns/17-bind9-restart-status.png)
 
-If your system uses the `bind9` service unit instead, run:
+
+### 6.4. Check the StorageClass
 
 ```bash
-sudo systemctl restart bind9
-sudo systemctl status bind9 --no-pager
+kubectl get storageclass
 ```
 
-If the service fails to start, inspect its logs:
+
+The `nfs-harbor` StorageClass should appear in the output.
+
+### 6.5. Inspect the StorageClass details
 
 ```bash
-sudo journalctl -u named -n 50 --no-pager
+kubectl describe storageclass nfs-harbor
 ```
 
-![Screenshot: BIND9 Service Logs](../images/dns/18-bind9-logs.png)
 
-For a service named `bind9`, replace `named` with `bind9` in the log command.
+Verify the provisioner, reclaim policy, and other relevant settings.
 
-## 10. Test DNS Resolution on the DNS Server
-
-Test the DNS service through localhost:
+### 6.6. Inspect recent events
 
 ```bash
-dig @127.0.0.1 harbor.k8s.local
+kubectl get events -n storage-system \
+  --sort-by=.lastTimestamp
 ```
 
-![Screenshot: Local DNS Resolution](../images/dns/19-dig-localhost.png)
+![Screenshot: Recent storage-system events](../images/kubernetes-storage/17-check-events.png)
 
-Test through the DNS server's LAN address:
+Events can help identify image-pulling problems, scheduling errors, or other deployment issues.
+
+### 6.7. Identify the Deployment name
+
+If the provisioner pod fails, first retrieve the actual Deployment name:
 
 ```bash
-dig @192.168.1.20 harbor.k8s.local
+kubectl get deployments -n storage-system
 ```
 
-![Screenshot: DNS Resolution Using the Server IP](../images/dns/20-dig-server-ip.png)
 
-In the answer section, verify that `harbor.k8s.local` resolves to the external IP address assigned to Traefik.
 
-You can also use `nslookup`:
+### 6.8. Retrieve the provisioner logs
+
+Replace `DEPLOYMENT_NAME` with the actual Deployment name returned by the previous command.
 
 ```bash
-nslookup harbor.k8s.local 192.168.1.20
+kubectl logs -n storage-system deployment/DEPLOYMENT_NAME
 ```
 
-![Screenshot: DNS Resolution with nslookup](../images/dns/21-nslookup-server.png)
+Do not continue to the PVC test until the provisioner is operational and the StorageClass exists.
 
-If the returned IP address is incorrect, check the `harbor` A record in `/etc/bind/db.k8s.local`, increment the zone serial if you edited the file, and reload or restart BIND9.
+## 7. Test Dynamic PersistentVolume Provisioning
 
-## 11. Check Firewall Rules (If UFW Is Enabled)
+A running provisioner does not necessarily mean that it can successfully create and mount volumes. This test validates the complete provisioning workflow.
 
-Check the firewall status:
+### 7.1. Create the test manifest
+
+On the Kubernetes master, create the file:
 
 ```bash
-sudo ufw status verbose
+nano nfs-test.yaml
 ```
 
-![Screenshot: UFW Status](../images/dns/22-ufw-status.png)
 
-If UFW is active, allow DNS queries from your local network over UDP and TCP port 53:
+
+Add the following YAML configuration to the file:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-test-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-harbor
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-test-pod
+  namespace: default
+spec:
+  containers:
+    - name: test
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - "echo 'NFS fonctionne' > /data/test.txt && sleep 3600"
+      volumeMounts:
+        - name: nfs-volume
+          mountPath: /data
+  volumes:
+    - name: nfs-volume
+      persistentVolumeClaim:
+        claimName: nfs-test-pvc
+```
+
+This manifest creates a PersistentVolumeClaim requesting `1Gi` and a Pod that mounts the claim at `/data` and writes a test file.
+
+Save the file and exit the editor.
+
+### 7.2. Apply the manifest
 
 ```bash
-sudo ufw allow from 192.168.1.0/24 to 192.168.1.20 port 53 proto udp
-sudo ufw allow from 192.168.1.0/24 to 192.168.1.20 port 53 proto tcp
-sudo ufw status numbered
+kubectl apply -f nfs-test.yaml
 ```
 
-![Screenshot: DNS Firewall Rules](../images/dns/23-dns-firewall-rules.png)
 
-Do not enable UFW without reviewing existing rules, especially SSH and any NFS or Kubernetes-related requirements. If you use a different firewall, configure equivalent rules there.
-
-## 12. Configure DNS on a Linux Client
-
-On a Linux client using `systemd-resolved`, inspect the current DNS configuration:
+### 7.3. Check the PersistentVolumeClaim
 
 ```bash
-resolvectl status
-ip -br address
+kubectl get pvc nfs-test-pvc
 ```
 
-![Screenshot: Linux DNS Client Status](../images/dns/24-linux-dns-status.png)
 
-For a temporary configuration, replace `ens33` with the correct client interface:
+
+The PVC should eventually reach the `Bound` state.
+
+### 7.4. Check the PersistentVolumes
 
 ```bash
-sudo resolvectl dns ens33 192.168.1.20
-sudo resolvectl domain ens33 '~k8s.local'
-sudo resolvectl flush-caches
+kubectl get pv
 ```
 
-![Screenshot: Linux DNS Client Configuration](../images/dns/25-linux-dns-client-config.png)
 
-Test DNS resolution:
+Verify that the volume associated with `nfs-test-pvc` exists and is bound.
+
+### 7.5. Check the test Pod
 
 ```bash
-resolvectl query harbor.k8s.local
+kubectl get pod nfs-test-pod -o wide
 ```
 
-![Screenshot: Linux DNS Query](../images/dns/26-linux-dns-query.png)
+![Screenshot: NFS test Pod status](../images/kubernetes-storage/24-check-test-pod.png)
 
-These settings may not persist after a reboot or network reconnection.
+The Pod should reach the `Running` state.
 
-For persistent settings with NetworkManager, identify the connection name:
+### 7.6. Check the Pod logs
 
 ```bash
-nmcli connection show
+kubectl logs nfs-test-pod
 ```
 
-![Screenshot: NetworkManager Connection Name](../images/dns/27-networkmanager-connection.png)
 
-Replace `netplan-ens33` with the actual connection name on your machine:
+### 7.7. Read the test file
 
 ```bash
-sudo nmcli connection modify "netplan-ens33" ipv4.dns "192.168.1.20"
-sudo nmcli connection modify "netplan-ens33" ipv4.dns-search "~k8s.local"
-sudo nmcli connection modify "netplan-ens33" ipv4.ignore-auto-dns yes
+kubectl exec nfs-test-pod -- cat /data/test.txt
 ```
 
-![Screenshot: Persistent Linux DNS Configuration](../images/dns/28-linux-persistent-dns-config.png)
+![Screenshot: Reading the test file from the mounted volume](../images/kubernetes-storage/26-verify-test-file.png)
 
-Apply the changes, replacing `ens33` with the correct interface:
+Expected output:
+
+```text
+NFS fonctionne
+```
+
+This confirms that the test Pod can write to and read from the mounted volume.
+
+### 7.8. Verify the file on the NFS server
+
+Run this command on the NFS server, not on the Kubernetes master unless they are the same machine:
 
 ```bash
-sudo nmcli device reapply ens33
+sudo find /srv/nfs/harbor -type f -name test.txt
 ```
+The exact directory depends on the subdirectory created by the provisioner.
 
-![Screenshot: Linux DNS Settings Applied](../images/dns/29-linux-dns-applied.png)
+**Storage capacity note:** The `1Gi` request does not enforce a strict physical quota on the NFS share. Monitor the actual free disk space on the NFS server.
 
-Applying network changes may interrupt connectivity. Run these commands from a local console or ensure you have another way to recover access.
+## 8. Troubleshooting the PVC Test
 
-## 13. Configure DNS on Windows
-
-Open PowerShell and list the available network adapters:
-
-```powershell
-Get-NetAdapter
-```
-
-![Screenshot: Windows Network Adapter](../images/dns/30-windows-network-adapter.png)
-
-Run PowerShell as Administrator and set the DNS server for the correct adapter. Replace `Ethernet` if your adapter has a different name:
-
-```powershell
-Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "192.168.1.20"
-```
-
-![Screenshot: Windows DNS Configuration](../images/dns/31-windows-dns-config.png)
-
-Flush the local DNS cache and query the Harbor hostname:
-
-```powershell
-ipconfig /flushdns
-nslookup harbor.k8s.local
-```
-
-![Screenshot: Windows DNS Resolution](../images/dns/32-windows-dns-resolution.png)
-
-The output should show `192.168.1.20` as the DNS server and the Traefik external IP as the resolved address.
-
-If your computer normally obtains DNS settings through DHCP, record the existing settings before changing them so you can restore them if needed.
-
-## 14. Troubleshooting
-
-Check whether BIND9 is listening on port 53:
+### 8.1. Inspect a PVC that remains Pending
 
 ```bash
-sudo ss -lntup | grep ':53'
+kubectl describe pvc nfs-test-pvc
 ```
 
-![Screenshot: DNS Listening Ports](../images/dns/33-dns-listening-ports.png)
-
-Check the Traefik Service and Kubernetes Ingress resources:
+### 8.2. Inspect recent cluster events
 
 ```bash
-kubectl get svc -n traefik
-kubectl get ingress -A
+kubectl get events --sort-by=.lastTimestamp
 ```
 
-![Screenshot: Kubernetes Ingress and Traefik](../images/dns/34-kubernetes-ingress-traefik.png)
 
-Common problems:
 
-- **The hostname does not resolve:** Check BIND9 status, `named-checkconf`, `named-checkzone`, the zone records, and the DNS server configured on the client.
-- **The hostname resolves to the wrong IP:** Update the Harbor A record to the current Traefik external IP, increment the zone serial, and reload or restart BIND9.
-- **Queries time out from other machines:** Check network connectivity, BIND9 `listen-on`, the trusted ACL, and firewall rules for UDP/TCP port 53.
-- **DNS works on the server but not on Windows:** Verify the Windows adapter's DNS server and run `ipconfig /flushdns`.
-- **The hostname resolves but the application is unreachable:** Check the Traefik external IP, the Harbor Ingress host rule, and Kubernetes Service endpoints.
+### 8.3. Inspect the test Pod
 
+```bash
+kubectl describe pod nfs-test-pod
+```
+
+
+### 8.4. Retrieve the test Pod logs
+
+```bash
+kubectl logs nfs-test-pod
+```
+
+
+
+If the PVC or Pod fails, verify:
+
+- The NFS server address and export path.
+- Network connectivity between the Kubernetes nodes and the NFS server.
+- NFS directory permissions.
+- Provisioner pod status and logs.
+- The StorageClass name and configuration.
+
+## 9. Clean Up the Test Resources
+
+Only perform this cleanup after completing the test and confirming that the data is no longer needed.
+
+### 9.1. Delete the test Pod
+
+```bash
+kubectl delete pod nfs-test-pod
+```
+
+
+
+### 9.2. Delete the test PVC
+
+```bash
+kubectl delete pvc nfs-test-pvc
+```
+
+![Screenshot: Test PVC deletion](../images/kubernetes-storage/33-delete-test-pvc.png)
+
+Because the StorageClass uses the `Retain` reclaim policy, the PersistentVolume may remain in the `Released` state after its claim is deleted. This is expected.
+
+Do not manually delete the PersistentVolume or remove its NFS directory until you have confirmed that it contains only disposable test data.
+
+## 10. Prepare Storage for Harbor
+
+Once the PVC test succeeds, the NFS provisioner is ready for the next stage of the deployment.
 
 
 ## References
 
-- [BIND 9 Documentation](https://bind9.readthedocs.io/)
-- [Ubuntu Server Documentation](https://documentation.ubuntu.com/server/)
-- [systemd-resolved Manual](https://www.freedesktop.org/software/systemd/man/latest/resolvectl.html)
-- [NetworkManager Documentation](https://networkmanager.dev/docs/)
-- [MetalLB Documentation](https://metallb.universe.tf/)
-- [Traefik Kubernetes Documentation](https://doc.traefik.io/traefik/providers/kubernetes-ingress/)
+- [NFS Subdirectory External Provisioner — Official GitHub Repository](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner)
+- [NFS Subdirectory External Provisioner — Helm Chart Repository](https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/)
+- [Kubernetes PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
+- [Kubernetes StorageClasses](https://kubernetes.io/docs/concepts/storage/storage-classes/)
+- [Harbor Documentation](https://goharbor.io/docs/)
