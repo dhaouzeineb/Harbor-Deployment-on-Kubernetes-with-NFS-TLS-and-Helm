@@ -178,7 +178,6 @@ Verify it directly:
 kubectl get ingressclass traefik
 ```
 
-![Screenshot: Traefik IngressClass details](../images/traefik-metallb/17-ingressclass-traefik.png)
 
 ### 3.10. Test HTTP access through a NodePort
 
