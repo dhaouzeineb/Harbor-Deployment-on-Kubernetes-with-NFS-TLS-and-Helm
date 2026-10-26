@@ -274,7 +274,6 @@ Wait for the required MetalLB components to become ready.
 kubectl get crd | grep metallb
 ```
 
-![Screenshot: MetalLB Custom Resource Definitions](../images/traefik-metallb/25-metallb-crds.png)
 
 The Custom Resource Definitions (CRDs) must be available before applying the IP address pool and Layer 2 advertisement resources.
 
@@ -383,79 +382,14 @@ kubectl get svc traefik -n traefik
 kubectl describe svc traefik -n traefik
 ```
 
-
-
 Verify the Service type, ports, endpoints, and any events indicating address allocation problems.
 
-### 6.4. Troubleshoot a Pending external IP
 
-If the external IP remains `Pending`, inspect recent events in the Traefik namespace:
-
-```bash
-kubectl get events -n traefik --sort-by=.lastTimestamp
-```
-
-
-
-Check the MetalLB Pods and identify the controller:
-
-```bash
-kubectl get pods -n metallb-system --show-labels
-```
-
-![Screenshot: MetalLB Pods and labels](../images/traefik-metallb/34-metallb-pod-labels.png)
-
-Use the actual controller Pod name returned by the previous command to inspect its logs:
-
-```bash
-kubectl logs -n metallb-system CONTROLLER_POD_NAME --tail=100
-```
-
-
-
-Replace `CONTROLLER_POD_NAME` with the actual Pod name. If the controller has multiple containers, specify the appropriate container using `-c CONTAINER_NAME`.
-
-Check that the IP pool and Layer 2 advertisement exist and that the addresses are available on the local network.
-
-## 7. Test Access from the Local Network
-
-Once MetalLB has assigned an external IP to Traefik, test access from the Windows client.
-
-### 7.1. Open the Traefik external IP in a browser
-
-In the Windows browser, enter:
-
-```text
-http://IP_EXTERNE_TRAEFIK
-```
-
-Replace `IP_EXTERNE_TRAEFIK` with the actual external IP assigned to the Traefik Service.
-
-![Screenshot: Opening the Traefik external IP in a Windows browser](../images/traefik-metallb/36-browser-access.png)
-
-A `404 Not Found` response may be expected before an Ingress route has been configured.
-
-### 7.2. Test HTTP connectivity from Windows
-
-Open PowerShell and execute:
-
-```powershell
-curl.exe -I http://IP_EXTERNE_TRAEFIK
-```
-
-![Screenshot: Testing Traefik HTTP connectivity from Windows PowerShell](../images/traefik-metallb/37-windows-curl-test.png)
-
-Replace the placeholder with the actual IP address.
-
-This test confirms that the client can reach Traefik. It does not yet verify routing to Harbor, which will be configured in a later stage.
-
-If the connection fails, verify network routing, firewall rules, MetalLB address announcements, and the Traefik Service configuration.
-
-## 8. Next Steps: Harbor DNS, TLS, and Ingress
+## 7. Next Steps: Harbor DNS, TLS, and Ingress
 
 The next stage is to configure the local hostname `harbor.k8s.local`, prepare the TLS certificate, create the Harbor Ingress resources, and deploy Harbor with the `nfs-harbor` StorageClass.
 
-## 9. Official References
+## 8. Official References
 
 - [Traefik Kubernetes Documentation](https://doc.traefik.io/traefik/setup/kubernetes/)
 - [Official Traefik Helm Chart](https://github.com/traefik/traefik-helm-chart)
