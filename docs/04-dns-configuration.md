@@ -57,7 +57,6 @@ Update the package index:
 sudo apt update
 ```
 
-![Screenshot: APT Package Update](../images/dns/03-apt-update.png)
 
 Install BIND9 and the DNS diagnostic utilities:
 
@@ -65,7 +64,6 @@ Install BIND9 and the DNS diagnostic utilities:
 sudo apt install -y bind9 bind9-utils dnsutils
 ```
 
-![Screenshot: BIND9 Installation](../images/dns/04-bind9-installation.png)
 
 Check the BIND9 service status:
 
@@ -99,7 +97,7 @@ Open the configuration file:
 sudo nano /etc/bind/named.conf.options
 ```
 
-![Screenshot: Editing BIND9 Options](../images/dns/07-bind9-options-editor.png)
+
 
 Configure BIND9 as follows. Adjust the server IP address and trusted subnet if your environment differs.
 
@@ -133,7 +131,7 @@ options {
 };
 ```
 
-![Screenshot: BIND9 Options Configuration](../images/dns/08-bind9-options.png)
+
 
 **Security note:** The ACL allows DNS queries only from localhost and the specified local subnet. Do not expose a recursive DNS resolver to untrusted networks.
 
@@ -153,7 +151,7 @@ Edit the file:
 sudo nano /etc/bind/named.conf.local
 ```
 
-![Screenshot: Editing the Local DNS Configuration](../images/dns/10-bind9-local-editor.png)
+
 
 Add the following zone declaration:
 
@@ -166,7 +164,7 @@ zone "k8s.local" {
 };
 ```
 
-![Screenshot: DNS Zone Declaration](../images/dns/11-dns-zone-declaration.png)
+
 
 This configuration declares `k8s.local` as a primary DNS zone and specifies the file that contains its records.
 
@@ -197,7 +195,7 @@ ns      IN  A   192.168.1.20
 harbor  IN  A   192.168.1.240
 ```
 
-![Screenshot: DNS Zone File Records](../images/dns/13-dns-zone-file.png)
+
 
 **Important:** Replace `192.168.1.240` with the actual Traefik external IP obtained in Step 2. If you change the zone later, increment the SOA serial number.
 
@@ -208,7 +206,7 @@ sudo chown root:bind /etc/bind/db.k8s.local
 sudo chmod 644 /etc/bind/db.k8s.local
 ```
 
-![Screenshot: DNS Zone File Permissions](../images/dns/14-zone-file-permissions.png)
+
 
 **Note about `.local`:** The `.local` suffix is reserved for Multicast DNS (mDNS), which can cause inconsistent behavior on some clients. For a new deployment, consider using a subdomain of a domain you own or `home.arpa` for a home network. If you change the suffix, update the zone declaration, DNS records, client hostname, and TLS certificate consistently.
 
@@ -219,8 +217,6 @@ Validate the main configuration:
 ```bash
 sudo named-checkconf
 ```
-
-![Screenshot: BIND9 Configuration Validation](../images/dns/15-named-checkconf.png)
 
 No output normally indicates that the configuration syntax is valid.
 
@@ -245,7 +241,6 @@ sudo systemctl restart named
 sudo systemctl status named --no-pager
 ```
 
-![Screenshot: BIND9 Restart and Service Status](../images/dns/17-bind9-restart-status.png)
 
 If your system uses the `bind9` service unit instead, run:
 
@@ -260,7 +255,7 @@ If the service fails to start, inspect the logs:
 sudo journalctl -u named -n 50 --no-pager
 ```
 
-![Screenshot: BIND9 Service Logs](../images/dns/18-bind9-logs.png)
+
 
 For a `bind9` service unit, replace `named` with `bind9` in the log command.
 
@@ -294,7 +289,7 @@ Check the firewall status:
 sudo ufw status verbose
 ```
 
-![Screenshot: UFW Status](../images/dns/21-ufw-status.png)
+
 
 If UFW is active, allow DNS queries from the local network over UDP and TCP port 53:
 
@@ -304,7 +299,7 @@ sudo ufw allow from 192.168.1.0/24 to 192.168.1.20 port 53 proto tcp
 sudo ufw status numbered
 ```
 
-![Screenshot: DNS Firewall Rules](../images/dns/22-dns-firewall-rules.png)
+
 
 Do not enable UFW without reviewing existing rules, especially SSH, NFS, and Kubernetes-related requirements. If you use a different firewall, configure equivalent rules there.
 
@@ -317,7 +312,7 @@ resolvectl status
 ip -br address
 ```
 
-![Screenshot: Linux DNS Client Status](../images/dns/23-linux-dns-status.png)
+
 
 For a temporary configuration, replace `ens33` with the correct client interface:
 
@@ -327,7 +322,7 @@ sudo resolvectl domain ens33 '~k8s.local'
 sudo resolvectl flush-caches
 ```
 
-![Screenshot: Linux DNS Client Configuration](../images/dns/24-linux-dns-client-config.png)
+
 
 Test the hostname:
 
@@ -335,7 +330,7 @@ Test the hostname:
 resolvectl query harbor.k8s.local
 ```
 
-![Screenshot: Linux DNS Query](../images/dns/25-linux-dns-query.png)
+
 
 These settings may not persist after a reboot or network reconnection.
 
@@ -345,7 +340,7 @@ For a persistent NetworkManager configuration, first identify the correct connec
 nmcli connection show
 ```
 
-![Screenshot: NetworkManager Connection Name](../images/dns/26-networkmanager-connection.png)
+
 
 Replace `netplan-ens33` below with the actual connection name:
 
@@ -355,7 +350,6 @@ sudo nmcli connection modify "netplan-ens33" ipv4.dns-search "~k8s.local"
 sudo nmcli connection modify "netplan-ens33" ipv4.ignore-auto-dns yes
 ```
 
-![Screenshot: Persistent Linux DNS Configuration](../images/dns/27-linux-persistent-dns-config.png)
 
 Apply the changes:
 
@@ -363,62 +357,8 @@ Apply the changes:
 sudo nmcli device reapply ens33
 ```
 
-![Screenshot: Linux DNS Settings Applied](../images/dns/28-linux-dns-applied.png)
 
 Use the correct interface name. Applying network changes may interrupt connectivity, so perform this step from a local console or ensure you have another way to recover access.
-
-## 13. Configure DNS on Windows
-
-Open PowerShell and list the available network adapters:
-
-```powershell
-Get-NetAdapter
-```
-
-![Screenshot: Windows Network Adapter](../images/dns/29-windows-network-adapter.png)
-
-Run PowerShell as Administrator and configure the DNS server for the correct adapter. Replace `Ethernet` if your adapter has a different name:
-
-```powershell
-Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "192.168.1.20"
-```
-
-![Screenshot: Windows DNS Configuration](../images/dns/30-windows-dns-config.png)
-
-Flush the local DNS cache and test name resolution:
-
-```powershell
-ipconfig /flushdns
-nslookup harbor.k8s.local
-```
-
-![Screenshot: Windows DNS Resolution](../images/dns/31-windows-dns-resolution.png)
-
-The output should show `192.168.1.20` as the DNS server and the Traefik external IP as the resolved address.
-
-If the client normally receives DNS settings through DHCP, record the original settings before changing them so that you can restore them if needed.
-
-## 14. Verify Harbor HTTPS Access
-
-From a client that can resolve the hostname, test HTTPS access:
-
-```bash
-curl -I https://harbor.k8s.local
-```
-
-![Screenshot: Harbor HTTPS Test](../images/dns/32-harbor-https-test.png)
-
-If the request fails with a certificate trust error, verify that the certificate includes `harbor.k8s.local` in its Subject Alternative Name (SAN) and that the issuing CA is trusted by the client.
-
-For temporary diagnosis only, you can test whether the HTTPS endpoint responds while bypassing certificate validation:
-
-```bash
-curl -kI https://harbor.k8s.local
-```
-
-![Screenshot: Harbor HTTPS Diagnostic](../images/dns/33-harbor-https-diagnostic.png)
-
-Do not use `-k` as a permanent solution. Configure the certificate and trust chain correctly.
 
 ## References
 
