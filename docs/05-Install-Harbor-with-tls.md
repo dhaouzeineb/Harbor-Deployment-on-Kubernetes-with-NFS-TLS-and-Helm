@@ -1,4 +1,4 @@
-# 05 — Install Harbor on Kubernetes with Helm, TLS, Traefik and NFS
+# Step 5 — Install Harbor on Kubernetes with Helm, TLS, Traefik and NFS
 
 ## Overview
 
