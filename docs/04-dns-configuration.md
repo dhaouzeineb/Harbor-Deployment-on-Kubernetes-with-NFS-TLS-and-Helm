@@ -55,7 +55,6 @@ ip route
 nmcli connection show
 ```
 
-![Screenshot: DNS Server Network Configuration](../images/dns/02-dns-server-network.png)
 
 These commands help identify:
 
