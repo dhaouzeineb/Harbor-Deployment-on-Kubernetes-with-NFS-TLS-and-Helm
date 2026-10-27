@@ -49,9 +49,6 @@ Run:
 ```bash
 kubectl get ingressclass
 ```
-
-![Screenshot: Kubernetes IngressClass](../images/harbor-tls/04-ingressclass.png)
-
 Identify the exact IngressClass name associated with Traefik. The configuration below assumes that its name is `traefik`.
 
 If the output shows a different name, use the actual name in the Helm values file.
