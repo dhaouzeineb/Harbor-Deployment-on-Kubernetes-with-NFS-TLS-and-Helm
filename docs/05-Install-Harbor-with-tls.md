@@ -560,37 +560,6 @@ Sign in using the username `admin` and the administrator password configured ear
 
 **Security note:** Do not use `curl -k` as a permanent solution to certificate errors. Verify the DNS record, certificate SAN, certificate chain and client CA trust instead.
 
-## 15. Verify the NFS Storage
-
-Check the PersistentVolumeClaims:
-
-```bash
-kubectl get pvc -n harbor
-```
-
-![Screenshot: Harbor PVC Status](../images/harbor-tls/52-harbor-pvc-status.png)
-
-Check the PersistentVolumes:
-
-```bash
-kubectl get pv
-```
-
-![Screenshot: Kubernetes PersistentVolumes](../images/harbor-tls/53-kubernetes-persistent-volumes.png)
-
-Check the NFS server to confirm that the provisioned Harbor data directories exist in the configured NFS export. The exact paths depend on your NFS provisioner and StorageClass configuration.
-
-Do not manually delete Harbor data directories or PVCs during troubleshooting.
-
-
-
-- `ca.key`
-- `harbor.key`
-- `harbor.csr`
-- `harbor.crt` if you prefer to keep generated deployment material outside the repository
-- `ca.crt` if you do not want to distribute your local CA certificate through the repository
-- `harbor-values.yaml`, because it contains the database password and secret key
-
 
 ## References
 
