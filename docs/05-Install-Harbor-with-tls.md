@@ -65,8 +65,6 @@ helm version
 openssl version
 ```
 
-![Screenshot: Helm and OpenSSL Versions](../images/harbor-tls/05-helm-openssl-versions.png)
-
 These tools are required to deploy Harbor and generate the local TLS certificates.
 
 ### 2.3. Verify the NFS StorageClass
