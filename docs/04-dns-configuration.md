@@ -233,8 +233,6 @@ Create or edit the zone file:
 sudo nano /etc/bind/db.k8s.local
 ```
 
-![Screenshot: Creating the DNS Zone File](../images/dns/12-dns-zone-file-editor.png)
-
 Add the following records:
 
 ```dns
