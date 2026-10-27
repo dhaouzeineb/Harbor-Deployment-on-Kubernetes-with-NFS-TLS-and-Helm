@@ -378,24 +378,16 @@ database:
 EOF
 ```
 
-![Screenshot: Harbor Helm Values File](../images/harbor-tls/31-harbor-values-file.png)
-
 Protect the values file because it contains the database password and secret key:
 
 ```bash
 chmod 600 "$HOME/harbor-values.yaml"
 ```
-
-![Screenshot: Harbor Helm Values File Permissions](../images/harbor-tls/32-harbor-values-permissions.png)
-
 Clear the shell variables:
 
 ```bash
 unset SECRET_KEY DB_PASSWORD
 ```
-
-![Screenshot: Harbor Secret Variables Cleared](../images/harbor-tls/33-harbor-secret-variables-cleared.png)
-
 **Important configuration notes:**
 
 - The `traefik` IngressClass name must match the name returned by `kubectl get ingressclass`.
@@ -423,9 +415,6 @@ helm template harbor harbor/harbor \
   --values "$HOME/harbor-values.yaml" \
   > /tmp/harbor-rendered.yaml
 ```
-
-![Screenshot: Harbor Helm Template Validation](../images/harbor-tls/35-harbor-helm-template.png)
-
 If the command fails, correct the values file before proceeding.
 
 Inspect the generated manifests for the hostname, IngressClass and storage class:
@@ -434,8 +423,8 @@ Inspect the generated manifests for the hostname, IngressClass and storage class
 grep -nE 'harbor.k8s.local|ingressClassName|storageClassName' \
   /tmp/harbor-rendered.yaml
 ```
+![Screenshot: Harbor Helm Template Validation](../images/harbor-tls/35-harbor-helm-template.png)
 
-![Screenshot: Harbor Rendered Manifest Inspection](../images/harbor-tls/36-harbor-rendered-manifest.png)
 
 Check that the generated configuration contains the expected hostname and `nfs-harbor` storage references.
 
@@ -507,15 +496,11 @@ If any Pod is not ready, inspect the namespace events:
 kubectl get events -n harbor --sort-by=.metadata.creationTimestamp
 ```
 
-![Screenshot: Harbor Kubernetes Events](../images/harbor-tls/43-harbor-events.png)
-
 Inspect a problematic Pod:
 
 ```bash
 kubectl describe pod -n harbor <POD_NAME>
 ```
-
-![Screenshot: Harbor Pod Details](../images/harbor-tls/44-harbor-pod-details.png)
 
 Replace `<POD_NAME>` with the actual Pod name from `kubectl get pods -n harbor`.
 
@@ -524,8 +509,6 @@ Check the logs of a problematic component:
 ```bash
 kubectl logs -n harbor <POD_NAME> --all-containers=true --tail=100
 ```
-
-![Screenshot: Harbor Pod Logs](../images/harbor-tls/45-harbor-pod-logs.png)
 
 Replace `<POD_NAME>` with the actual Pod name. Use the events, Pod description and logs to identify whether the issue is related to image pulls, storage, permissions, configuration or application startup.
 
@@ -543,37 +526,19 @@ On Debian/Ubuntu clients, copy the CA certificate to the local trust store:
 sudo cp ca.crt /usr/local/share/ca-certificates/harbor-local-ca.crt
 ```
 
-![Screenshot: Local CA Copied to Linux Trust Store](../images/harbor-tls/46-linux-ca-copied.png)
-
 Update the CA certificates:
 
 ```bash
 sudo update-ca-certificates
 ```
 
-![Screenshot: Linux CA Trust Store Updated](../images/harbor-tls/47-linux-ca-trust-updated.png)
-
-### Windows clients
-
-Transfer `ca.crt` securely to the Windows client. Open PowerShell as Administrator and import the CA into the local machine's Trusted Root Certification Authorities store:
-
-```powershell
-Import-Certificate -FilePath "C:\path\to\ca.crt" -CertStoreLocation Cert:\LocalMachine\Root
-```
-
-![Screenshot: Windows Local CA Imported](../images/harbor-tls/48-windows-ca-imported.png)
-
-Replace `C:\path\to\ca.crt` with the actual file path. Only import a CA certificate that you generated and control.
-
-## 14. Test Harbor HTTPS Access
+## 13. Test Harbor HTTPS Access
 
 From a client that resolves `harbor.k8s.local` to the Traefik external IP, run:
 
 ```bash
 curl --cacert "$HOME/harbor-tls/ca.crt" -I https://harbor.k8s.local
 ```
-
-![Screenshot: Harbor HTTPS Test](../images/harbor-tls/49-harbor-https-test.png)
 
 On a client where the CA has been installed in the operating system trust store, you can test with:
 
