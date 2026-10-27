@@ -33,35 +33,7 @@ Harbor will be exposed through Traefik using the hostname `harbor.k8s.local`. Pe
 
 Replace example values if your environment differs. Verify the actual Traefik IP and StorageClass before installing Harbor.
 
-## 2. Verify Kubernetes, DNS, Traefik and Helm
-
-Run the following commands on the Kubernetes master node, or on a machine configured to use the cluster's kubeconfig:
-
-```bash
-kubectl get nodes
-```
-
-![Screenshot: Kubernetes Nodes Ready](../images/harbor-tls/01-kubernetes-nodes.png)
-
-Check the Traefik Service:
-
-```bash
-kubectl get svc traefik -n traefik
-```
-
-![Screenshot: Traefik External IP](../images/harbor-tls/02-traefik-external-ip.png)
-
-The `EXTERNAL-IP` should contain the IP address assigned by MetalLB. The examples in this guide use `192.168.1.240`.
-
-Check the DNS record:
-
-```bash
-dig @192.168.1.20 harbor.k8s.local
-```
-
-![Screenshot: Harbor DNS Resolution](../images/harbor-tls/03-harbor-dns-resolution.png)
-
-The DNS answer should point to the actual Traefik external IP.
+## 2. Verification 
 
 Check the IngressClass:
 
@@ -88,7 +60,6 @@ Check that the NFS StorageClass exists:
 kubectl get storageclass nfs-harbor
 ```
 
-![Screenshot: NFS StorageClass](../images/harbor-tls/06-nfs-storageclass.png)
 
 Stop here if the DNS record is incorrect, Traefik has no external IP, or the StorageClass does not exist.
 
@@ -104,8 +75,6 @@ Create the working directory:
 mkdir -p "$HOME/harbor-tls"
 ```
 
-![Screenshot: TLS Working Directory](../images/harbor-tls/07-tls-directory.png)
-
 Restrict access to the directory:
 
 ```bash
@@ -113,7 +82,7 @@ chmod 700 "$HOME/harbor-tls"
 cd "$HOME/harbor-tls"
 ```
 
-![Screenshot: TLS Directory Permissions](../images/harbor-tls/08-tls-directory-permissions.png)
+
 
 ### 3.1 Generate the local CA
 
@@ -159,7 +128,6 @@ subjectAltName=DNS:harbor.k8s.local
 EOF
 ```
 
-![Screenshot: Harbor Certificate Extensions](../images/harbor-tls/11-harbor-certificate-extensions.png)
 
 The SAN is important because clients validate the hostname against the certificate.
 
@@ -187,8 +155,6 @@ Restrict access to the private keys:
 chmod 600 ca.key harbor.key
 ```
 
-![Screenshot: TLS Private Key Permissions](../images/harbor-tls/13-tls-private-key-permissions.png)
-
 **Security warning:** Never upload `ca.key` or `harbor.key` to GitHub. The CA private key is especially sensitive because it can sign other certificates.
 
 ## 4. Validate the TLS Certificate
@@ -199,7 +165,6 @@ Verify the server certificate against the local CA:
 openssl verify -CAfile ca.crt harbor.crt
 ```
 
-![Screenshot: Certificate Chain Verification](../images/harbor-tls/14-certificate-verification.png)
 
 Expected result:
 
@@ -212,8 +177,6 @@ Inspect the certificate subject, issuer and validity dates:
 ```bash
 openssl x509 -in harbor.crt -noout -subject -issuer -dates
 ```
-
-![Screenshot: Certificate Subject and Validity](../images/harbor-tls/15-certificate-details.png)
 
 Verify the Subject Alternative Name:
 
@@ -248,8 +211,6 @@ Create the namespace:
 kubectl create namespace harbor
 ```
 
-![Screenshot: Harbor Namespace Creation](../images/harbor-tls/18-harbor-namespace.png)
-
 If the namespace already exists, verify it rather than deleting it.
 
 Create the TLS Secret from the server certificate and private key:
@@ -260,16 +221,12 @@ kubectl create secret tls harbor-tls \
   --cert="$HOME/harbor-tls/harbor.crt" \
   --key="$HOME/harbor-tls/harbor.key"
 ```
-
-![Screenshot: Harbor TLS Secret Creation](../images/harbor-tls/19-harbor-tls-secret.png)
-
 Inspect the Secret:
 
 ```bash
 kubectl describe secret harbor-tls -n harbor
 ```
-
-![Screenshot: Harbor TLS Secret Details](../images/harbor-tls/20-harbor-tls-secret-details.png)
+![Screenshot: Harbor TLS Secret Creation](../images/harbor-tls/19-harbor-tls-secret.png)
 
 The Secret type should be `kubernetes.io/tls`, with the `tls.crt` and `tls.key` entries.
 
@@ -312,15 +269,11 @@ kubectl create secret generic harbor-admin-password \
   --from-literal=HARBOR_ADMIN_PASSWORD="$HARBOR_ADMIN_PASSWORD"
 ```
 
-![Screenshot: Harbor Administrator Password Secret](../images/harbor-tls/24-harbor-admin-password-secret.png)
-
 Remove the password variable from the current shell:
 
 ```bash
 unset HARBOR_ADMIN_PASSWORD
 ```
-
-![Screenshot: Harbor Password Variable Cleared](../images/harbor-tls/25-harbor-password-cleared.png)
 
 The password is stored in a Kubernetes Secret rather than written directly into the Helm values file. Use a strong, unique password.
 
@@ -331,16 +284,12 @@ Add the official Harbor chart repository:
 ```bash
 helm repo add harbor https://helm.goharbor.io
 ```
-
-![Screenshot: Harbor Helm Repository Added](../images/harbor-tls/26-helm-repository-add.png)
-
 Update the Helm repository metadata:
 
 ```bash
 helm repo update
 ```
 
-![Screenshot: Helm Repository Update](../images/harbor-tls/27-helm-repository-update.png)
 
 Check the chart information:
 
@@ -358,8 +307,6 @@ Inspect the chart's persistence configuration:
 helm show values harbor/harbor | sed -n '/^persistence:/,/^imageChartStorage:/p'
 ```
 
-![Screenshot: Harbor Helm Persistence Values](../images/harbor-tls/29-helm-persistence-values.png)
-
 The Harbor chart supports configuring persistent volumes through `persistence.persistentVolumeClaim`. This guide configures the registry, job logs, database, Redis and Trivy to use the existing `nfs-harbor` StorageClass.
 
 ## 8. Create the Harbor Helm Values File
@@ -370,9 +317,6 @@ Generate a random 16-character secret key and a random database password:
 SECRET_KEY="$(openssl rand -hex 8)"
 DB_PASSWORD="$(openssl rand -hex 16)"
 ```
-
-![Screenshot: Harbor Secret Key and Database Password Generation](../images/harbor-tls/30-harbor-secret-generation.png)
-
 Create the Helm values file:
 
 ```bash
