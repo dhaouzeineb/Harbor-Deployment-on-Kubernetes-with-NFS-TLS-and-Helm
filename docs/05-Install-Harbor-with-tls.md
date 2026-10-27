@@ -1,23 +1,25 @@
-# Install Harbor on Kubernetes with Helm, TLS, Traefik and NFS
+# 05 — Install Harbor on Kubernetes with Helm, TLS, Traefik and NFS
 
 ## Overview
 
-This guide explains how to generate a local TLS certificate, configure a Kubernetes TLS Secret, and install Harbor using Helm in a Kubernetes cluster.
+This guide explains how to generate a local Certificate Authority (CA), create a TLS certificate for Harbor, configure Kubernetes Secrets, and deploy Harbor using Helm in a Kubernetes cluster.
 
-Harbor will be exposed through Traefik using the hostname `harbor.k8s.local`. Persistent data will use the existing NFS-backed Kubernetes StorageClass `nfs-harbor`.
+Harbor will be exposed through Traefik using the hostname `harbor.k8s.local`. MetalLB provides the external IP address for Traefik, BIND9 resolves the Harbor hostname, and persistent data is stored using the existing NFS-backed Kubernetes StorageClass `nfs-harbor`.
 
 ### Architecture
 
-- **Kubernetes:** runs the Harbor components.
-- **Traefik:** exposes Harbor through an Ingress.
-- **MetalLB:** provides the external IP address assigned to Traefik.
-- **BIND9:** resolves `harbor.k8s.local` to the Traefik external IP.
-- **NFS:** provides persistent storage through the `nfs-harbor` StorageClass.
-- **TLS:** protects client connections to Harbor using a locally generated certificate.
+- **Kubernetes:** Runs the Harbor components.
+- **Traefik:** Routes incoming HTTPS requests to Harbor through an Ingress.
+- **MetalLB:** Provides the external IP address assigned to Traefik.
+- **BIND9:** Resolves `harbor.k8s.local` to the Traefik external IP.
+- **NFS:** Provides persistent storage through the `nfs-harbor` StorageClass.
+- **TLS:** Protects client connections to Harbor using a locally generated certificate signed by a local CA.
 
-**Scope:** This guide covers TLS certificate generation, Harbor installation, NFS persistence configuration, and verification. It assumes that Kubernetes, Traefik, MetalLB, BIND9, and the `nfs-harbor` StorageClass are already configured.
+**Scope:** This guide covers TLS certificate generation, Harbor installation, persistent storage configuration, and deployment verification. It assumes that Kubernetes, Traefik, MetalLB, BIND9, and the `nfs-harbor` StorageClass are already configured.
 
 ## 1. Environment
+
+The following table describes the example environment used in this guide.
 
 | Component | Example value |
 |---|---|
@@ -29,13 +31,20 @@ Harbor will be exposed through Traefik using the hostname `harbor.k8s.local`. Pe
 | NFS StorageClass | `nfs-harbor` |
 | Helm release | `harbor` |
 | TLS Secret | `harbor-tls` |
-| Local certificate authority Secret | `harbor-ca` |
+| Local CA Secret | `harbor-ca` |
+| Administrator password Secret | `harbor-admin-password` |
 
-Replace example values if your environment differs. Verify the actual Traefik IP and StorageClass before installing Harbor.
+These values are examples. Verify the actual Traefik IP address, IngressClass, and StorageClass before installing Harbor.
 
-## 2. Verification 
+The certificate, DNS record, and Harbor Ingress must all use the same hostname: `harbor.k8s.local`.
 
-Check the IngressClass:
+## 2. Verify the Prerequisites
+
+Before proceeding, verify that the cluster networking, DNS resolution, and storage configuration are ready.
+
+### 2.1. Check the Kubernetes IngressClass
+
+Run:
 
 ```bash
 kubectl get ingressclass
@@ -43,9 +52,13 @@ kubectl get ingressclass
 
 ![Screenshot: Kubernetes IngressClass](../images/harbor-tls/04-ingressclass.png)
 
-Identify the exact name of the Traefik IngressClass. The configuration below assumes its name is `traefik`. If the output shows another name, use that name in the Helm values file.
+Identify the exact IngressClass name associated with Traefik. The configuration below assumes that its name is `traefik`.
 
-Check Helm and OpenSSL:
+If the output shows a different name, use the actual name in the Helm values file.
+
+### 2.2. Check Helm and OpenSSL
+
+Verify that Helm and OpenSSL are installed:
 
 ```bash
 helm version
@@ -54,39 +67,45 @@ openssl version
 
 ![Screenshot: Helm and OpenSSL Versions](../images/harbor-tls/05-helm-openssl-versions.png)
 
-Check that the NFS StorageClass exists:
+These tools are required to deploy Harbor and generate the local TLS certificates.
+
+### 2.3. Verify the NFS StorageClass
+
+Check that the expected StorageClass exists:
 
 ```bash
 kubectl get storageclass nfs-harbor
 ```
 
+The `nfs-harbor` StorageClass must be available before Harbor's PersistentVolumeClaims can be provisioned.
 
-Stop here if the DNS record is incorrect, Traefik has no external IP, or the StorageClass does not exist.
+If the StorageClass is missing, return to the NFS storage configuration and resolve the issue before continuing.
+
+Also verify that `harbor.k8s.local` resolves to the current Traefik external IP address and that Traefik has an assigned external IP.
 
 ## 3. Generate a Local Certificate Authority and Harbor Certificate
 
-The following steps create a local certificate authority (CA) and a server certificate for `harbor.k8s.local`.
+The following steps create a local Certificate Authority and a server certificate for `harbor.k8s.local`.
 
-Run these commands on the Kubernetes master node. The private keys must be protected and must not be committed to GitHub.
+Run these commands on the Kubernetes master node or another trusted administrative machine with OpenSSL installed.
 
-Create the working directory:
+**Security warning:** The CA private key can sign certificates for other services. Keep it protected and never commit it to GitHub.
+
+### 3.1. Create the working directory
+
+Create a dedicated directory for the certificate files:
 
 ```bash
 mkdir -p "$HOME/harbor-tls"
-```
-
-Restrict access to the directory:
-
-```bash
 chmod 700 "$HOME/harbor-tls"
 cd "$HOME/harbor-tls"
 ```
 
+The directory permissions restrict access to the current user.
 
+### 3.2. Generate the local CA
 
-### 3.1 Generate the local CA
-
-Generate a local certificate authority certificate and its private key:
+Generate a self-signed CA certificate and its private key:
 
 ```bash
 openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
@@ -97,14 +116,16 @@ openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
 
 ![Screenshot: Local CA Generation](../images/harbor-tls/09-ca-generation.png)
 
-The files are:
+The generated files are:
 
-- `ca.key`: the CA private key. Keep it secret.
-- `ca.crt`: the public CA certificate. This can be distributed to clients that need to trust the Harbor certificate.
+- `ca.key`: the CA private key. Keep it secret and restrict access.
+- `ca.crt`: the public CA certificate. This can be distributed to clients that need to trust Harbor's certificate.
 
-### 3.2 Generate the Harbor server key and certificate request
+The `-nodes` option creates an unencrypted private key. This simplifies automated use in the lab, but it makes file permissions and secure storage particularly important.
 
-Create the server private key and certificate signing request (CSR):
+### 3.3. Generate the Harbor server key and certificate request
+
+Generate the private key and Certificate Signing Request (CSR):
 
 ```bash
 openssl req -new -newkey rsa:3072 -nodes \
@@ -115,9 +136,14 @@ openssl req -new -newkey rsa:3072 -nodes \
 
 ![Screenshot: Harbor Certificate Request](../images/harbor-tls/10-harbor-csr.png)
 
-### 3.3 Configure the certificate extensions
+The files are:
 
-Create an extensions file containing the DNS Subject Alternative Name (SAN):
+- `harbor.key`: the private key used by the Harbor server certificate.
+- `harbor.csr`: the certificate request that will be signed by the local CA.
+
+### 3.4. Configure the certificate extensions
+
+Create an extensions file defining the certificate's usage and Subject Alternative Name (SAN):
 
 ```bash
 cat > harbor.ext <<'EOF'
@@ -128,12 +154,13 @@ subjectAltName=DNS:harbor.k8s.local
 EOF
 ```
 
+The SAN is essential because modern clients validate the requested hostname against the certificate's SAN entries.
 
-The SAN is important because clients validate the hostname against the certificate.
+The certificate must contain `DNS:harbor.k8s.local` for the hostname used to access Harbor.
 
-### 3.4 Sign the Harbor certificate
+### 3.5. Sign the Harbor certificate
 
-Sign the server certificate with the local CA:
+Sign the server certificate using the local CA:
 
 ```bash
 openssl x509 -req \
@@ -155,24 +182,33 @@ Restrict access to the private keys:
 chmod 600 ca.key harbor.key
 ```
 
-**Security warning:** Never upload `ca.key` or `harbor.key` to GitHub. The CA private key is especially sensitive because it can sign other certificates.
+**Security warning:** Never upload `ca.key` or `harbor.key` to GitHub. The CA private key is especially sensitive because anyone who obtains it can sign additional certificates trusted by clients that accept this CA.
+
+The public certificates, `ca.crt` and `harbor.crt`, are not private keys. However, publish them only when appropriate for your environment.
 
 ## 4. Validate the TLS Certificate
 
-Verify the server certificate against the local CA:
+Before creating the Kubernetes Secrets, verify that the server certificate is valid and matches the expected hostname.
+
+### 4.1. Verify the certificate against the local CA
+
+Run:
 
 ```bash
 openssl verify -CAfile ca.crt harbor.crt
 ```
 
-
-Expected result:
+Expected output:
 
 ```text
 harbor.crt: OK
 ```
 
-Inspect the certificate subject, issuer and validity dates:
+This confirms that OpenSSL can validate the server certificate against the specified CA certificate.
+
+### 4.2. Inspect the certificate details
+
+Inspect the subject, issuer, and validity dates:
 
 ```bash
 openssl x509 -in harbor.crt -noout -subject -issuer -dates
@@ -192,7 +228,11 @@ The output must contain:
 DNS:harbor.k8s.local
 ```
 
-Check that the private key matches the certificate:
+If the SAN is missing or incorrect, regenerate the certificate with the appropriate extensions before continuing.
+
+### 4.3. Verify that the private key matches the certificate
+
+Compare the public key derived from the certificate with the public key derived from the private key:
 
 ```bash
 openssl x509 -in harbor.crt -pubkey -noout | openssl sha256
@@ -201,19 +241,29 @@ openssl pkey -in harbor.key -pubout | openssl sha256
 
 ![Screenshot: Certificate and Key Match](../images/harbor-tls/17-certificate-key-match.png)
 
-Both command outputs should contain the same hash.
+Both commands should produce the same hash. If the hashes differ, the certificate and private key do not belong together.
 
 ## 5. Create the Harbor Namespace and Kubernetes Secrets
 
-Create the namespace:
+Harbor will be deployed in a dedicated Kubernetes namespace named `harbor`.
+
+### 5.1. Create the namespace
+
+Run:
 
 ```bash
 kubectl create namespace harbor
 ```
 
-If the namespace already exists, verify it rather than deleting it.
+If the namespace already exists, verify it instead of deleting or recreating it:
 
-Create the TLS Secret from the server certificate and private key:
+```bash
+kubectl get namespace harbor
+```
+
+### 5.2. Create the TLS Secret
+
+Create a Kubernetes TLS Secret from the server certificate and private key:
 
 ```bash
 kubectl create secret tls harbor-tls \
@@ -221,16 +271,25 @@ kubectl create secret tls harbor-tls \
   --cert="$HOME/harbor-tls/harbor.crt" \
   --key="$HOME/harbor-tls/harbor.key"
 ```
+
 Inspect the Secret:
 
 ```bash
 kubectl describe secret harbor-tls -n harbor
 ```
+
 ![Screenshot: Harbor TLS Secret Creation](../images/harbor-tls/19-harbor-tls-secret.png)
 
-The Secret type should be `kubernetes.io/tls`, with the `tls.crt` and `tls.key` entries.
+The Secret type should be `kubernetes.io/tls`, with the following data entries:
 
-Create a Secret containing the public CA certificate. This allows Harbor's portal to offer the CA certificate for download when configured through the chart's `caSecretName` value:
+- `tls.crt`
+- `tls.key`
+
+The Helm chart will reference this Secret to configure TLS for the Harbor Ingress.
+
+### 5.3. Create the CA certificate Secret
+
+Create a Kubernetes Secret containing the public CA certificate:
 
 ```bash
 kubectl create secret generic harbor-ca \
@@ -240,7 +299,11 @@ kubectl create secret generic harbor-ca \
 
 ![Screenshot: Harbor CA Secret Creation](../images/harbor-tls/21-harbor-ca-secret.png)
 
-Verify the Secrets:
+This Secret contains the public CA certificate, not the CA private key. The Harbor chart's `caSecretName` setting can use it to provide the CA download link in the portal.
+
+### 5.4. Verify the Kubernetes Secrets
+
+List the Secrets in the Harbor namespace:
 
 ```bash
 kubectl get secrets -n harbor
@@ -248,9 +311,15 @@ kubectl get secrets -n harbor
 
 ![Screenshot: Harbor Kubernetes Secrets](../images/harbor-tls/22-harbor-secrets-list.png)
 
-Expected Secret names include `harbor-tls` and `harbor-ca`.
+The list should include `harbor-tls` and `harbor-ca`.
+
+If a Secret already exists, do not delete it blindly. Inspect its contents and update it deliberately if the certificate or key needs to be replaced.
 
 ## 6. Create the Harbor Administrator Password Secret
+
+The initial Harbor administrator password should be stored in a Kubernetes Secret rather than written directly into the Helm values file.
+
+### 6.1. Enter the administrator password
 
 Prompt for a password without displaying it in the terminal:
 
@@ -261,7 +330,11 @@ echo
 
 ![Screenshot: Harbor Administrator Password Prompt](../images/harbor-tls/23-harbor-admin-password-prompt.png)
 
-Create a Kubernetes Secret to store the password:
+Use a strong, unique password and store it securely.
+
+### 6.2. Create the Kubernetes Secret
+
+Create the Secret with the expected key:
 
 ```bash
 kubectl create secret generic harbor-admin-password \
@@ -275,23 +348,29 @@ Remove the password variable from the current shell:
 unset HARBOR_ADMIN_PASSWORD
 ```
 
-The password is stored in a Kubernetes Secret rather than written directly into the Helm values file. Use a strong, unique password.
+The Secret name and key must match the settings used in the Helm values file.
 
 ## 7. Add the Official Harbor Helm Repository
 
-Add the official Harbor chart repository:
+### 7.1. Add the repository
+
+Add the official Harbor Helm chart repository:
 
 ```bash
 helm repo add harbor https://helm.goharbor.io
 ```
-Update the Helm repository metadata:
+
+### 7.2. Update the repository metadata
+
+Refresh the Helm repository index:
 
 ```bash
 helm repo update
 ```
 
+### 7.3. Inspect the Harbor chart
 
-Check the chart information:
+Display the chart information:
 
 ```bash
 helm show chart harbor/harbor
@@ -299,25 +378,36 @@ helm show chart harbor/harbor
 
 ![Screenshot: Harbor Helm Chart Information](../images/harbor-tls/28-helm-chart-information.png)
 
-For reproducible deployments, note the chart version shown by this command and consider pinning that version during installation.
+Record the chart version. For reproducible installations, select and pin a specific version rather than relying indefinitely on whichever chart version is latest.
 
-Inspect the chart's persistence configuration:
+Inspect the default chart values:
 
 ```bash
-helm show values harbor/harbor | sed -n '/^persistence:/,/^imageChartStorage:/p'
+helm show values harbor/harbor > "$HOME/harbor-values-default.yaml"
 ```
 
-The Harbor chart supports configuring persistent volumes through `persistence.persistentVolumeClaim`. This guide configures the registry, job logs, database, Redis and Trivy to use the existing `nfs-harbor` StorageClass.
+Review the persistence settings and confirm the configuration keys supported by the selected chart version before creating the custom values file.
+
+The official Harbor chart uses settings such as `persistence.persistentVolumeClaim.registry.storageClass` and `persistence.persistentVolumeClaim.jobservice.jobLog.storageClass` to configure persistent storage.
 
 ## 8. Create the Harbor Helm Values File
 
-Generate a random 16-character secret key and a random database password:
+This section configures the Harbor Ingress, TLS Secret, administrator password Secret, CA certificate Secret, and NFS-backed persistent volumes.
+
+### 8.1. Generate the required secret values
+
+Generate a random 16-character Harbor secret key and a random database password:
 
 ```bash
 SECRET_KEY="$(openssl rand -hex 8)"
 DB_PASSWORD="$(openssl rand -hex 16)"
 ```
-Create the Helm values file:
+
+The Harbor chart requires `secretKey` to be a 16-character string. The first command generates 16 hexadecimal characters.
+
+### 8.2. Create the custom values file
+
+Create the file using the following configuration:
 
 ```bash
 cat > "$HOME/harbor-values.yaml" <<EOF
@@ -343,7 +433,7 @@ existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
 
 caSecretName: harbor-ca
 
-secretKey: "\${SECRET_KEY}"
+secretKey: "${SECRET_KEY}"
 
 persistence:
   enabled: true
@@ -374,32 +464,53 @@ persistence:
 database:
   type: internal
   internal:
-    password: "\${DB_PASSWORD}"
+    password: "${DB_PASSWORD}"
 EOF
 ```
 
-Protect the values file because it contains the database password and secret key:
+Protect the values file because it contains sensitive configuration values:
 
 ```bash
 chmod 600 "$HOME/harbor-values.yaml"
 ```
-Clear the shell variables:
+
+Remove the generated values from the current shell:
 
 ```bash
 unset SECRET_KEY DB_PASSWORD
 ```
+
+### 8.3. Understand the main configuration settings
+
+- `expose.type: ingress` configures Harbor to be exposed through an Ingress.
+- `expose.tls.secret.secretName: harbor-tls` specifies the TLS Secret created earlier.
+- `expose.ingress.className: traefik` associates the Ingress with the Traefik IngressClass.
+- `externalURL` sets Harbor's external URL, which is used in URLs returned to clients.
+- `existingSecretAdminPassword` and `existingSecretAdminPasswordKey` specify the Secret containing the initial administrator password.
+- `caSecretName` specifies the Secret containing the public CA certificate.
+- `persistence.enabled: true` enables persistent storage.
+- `persistence.resourcePolicy: keep` requests retention of supported persistent resources when the Helm release is deleted.
+- The `storageClass` entries specify `nfs-harbor` for the configured Harbor components.
+- `database.internal.password` sets the password for Harbor's internal database.
+
 **Important configuration notes:**
 
-- The `traefik` IngressClass name must match the name returned by `kubectl get ingressclass`.
-- The `websecure` entrypoint must exist in the Traefik configuration.
-- The TLS certificate must be valid for `harbor.k8s.local`.
-- The `nfs-harbor` StorageClass must be able to provision the requested volumes.
-- The example storage sizes are lab values. Adjust them to match available NFS capacity.
-- The values above configure TLS for client connections through the Ingress. Harbor internal component TLS is a separate setting and is not enabled by this configuration.
+1. The IngressClass name must match the actual name returned by `kubectl get ingressclass`.
+2. The Traefik `websecure` entrypoint must exist and be configured to accept HTTPS traffic.
+3. The TLS certificate must be valid for `harbor.k8s.local`.
+4. The NFS provisioner must be able to provision the requested volumes.
+5. The example storage sizes are for a lab environment. Adjust them according to the available storage capacity.
+6. The values above configure TLS for client connections through the Ingress. Harbor's internal component TLS is a separate setting and is not enabled by this configuration.
+
+The `ReadWriteOnce` access mode is used for these individual claims. This does not require the underlying NFS server to be limited to one client; it describes the Kubernetes volume access mode.
 
 ## 9. Validate the Helm Configuration Before Installation
 
-Check the StorageClass again:
+Validate the StorageClass and render the Helm templates before deploying Harbor.
+
+### 9.1. Check the StorageClass
+
+Run:
 
 ```bash
 kubectl get storageclass nfs-harbor
@@ -407,7 +518,11 @@ kubectl get storageclass nfs-harbor
 
 ![Screenshot: NFS StorageClass Before Installation](../images/harbor-tls/34-nfs-storageclass-check.png)
 
-Render the Harbor Kubernetes manifests without installing them:
+Verify that the StorageClass exists and is configured as expected.
+
+### 9.2. Render the Harbor manifests
+
+Render the Kubernetes manifests without installing Harbor:
 
 ```bash
 helm template harbor harbor/harbor \
@@ -415,22 +530,25 @@ helm template harbor harbor/harbor \
   --values "$HOME/harbor-values.yaml" \
   > /tmp/harbor-rendered.yaml
 ```
+
 If the command fails, correct the values file before proceeding.
 
-Inspect the generated manifests for the hostname, IngressClass and storage class:
+Inspect the generated manifests for the hostname, IngressClass, and storage configuration:
 
 ```bash
 grep -nE 'harbor.k8s.local|ingressClassName|storageClassName' \
   /tmp/harbor-rendered.yaml
 ```
+
 ![Screenshot: Harbor Helm Template Validation](../images/harbor-tls/35-harbor-helm-template.png)
 
+Confirm that the rendered configuration contains the expected hostname, the intended IngressClass, and `nfs-harbor` storage references.
 
-Check that the generated configuration contains the expected hostname and `nfs-harbor` storage references.
+Template rendering validates chart rendering, but it does not prove that the PVCs will bind or that all Harbor components will start successfully.
 
 ## 10. Install Harbor with Helm
 
-Install Harbor only after the validation steps succeed:
+After the prerequisite checks and template validation succeed, install Harbor:
 
 ```bash
 helm upgrade --install harbor harbor/harbor \
@@ -442,11 +560,17 @@ helm upgrade --install harbor harbor/harbor \
 
 ![Screenshot: Harbor Helm Installation](../images/harbor-tls/37-harbor-helm-installation.png)
 
-This command installs Harbor or upgrades the existing Helm release named `harbor`. The `--wait` option waits for Kubernetes resources to become ready, up to the specified timeout.
+The `helm upgrade --install` command installs the release if it does not exist or upgrades it if it already exists.
+
+The `--wait` option makes Helm wait for relevant Kubernetes resources to become ready, subject to the timeout. If the installation times out, inspect the Pods, PVCs, events, and Helm release status before retrying.
 
 ## 11. Verify the Harbor Deployment
 
-Check the Pods:
+After installation, verify the status of Harbor's Kubernetes resources.
+
+### 11.1. Check the Pods
+
+Run:
 
 ```bash
 kubectl get pods -n harbor
@@ -454,7 +578,11 @@ kubectl get pods -n harbor
 
 ![Screenshot: Harbor Pods](../images/harbor-tls/38-harbor-pods.png)
 
-Check the Services:
+Check that the Harbor components become ready. If a Pod remains in a non-ready state, inspect its events and logs.
+
+### 11.2. Check the Services
+
+List the Services:
 
 ```bash
 kubectl get svc -n harbor
@@ -462,7 +590,11 @@ kubectl get svc -n harbor
 
 ![Screenshot: Harbor Services](../images/harbor-tls/39-harbor-services.png)
 
-Check the PersistentVolumeClaims:
+Verify that the expected internal Services have been created.
+
+### 11.3. Check the PersistentVolumeClaims
+
+List the PVCs:
 
 ```bash
 kubectl get pvc -n harbor
@@ -470,9 +602,13 @@ kubectl get pvc -n harbor
 
 ![Screenshot: Harbor PersistentVolumeClaims](../images/harbor-tls/40-harbor-pvcs.png)
 
-The PVCs should eventually show `Bound`. If they remain `Pending`, inspect the StorageClass, NFS provisioner and PVC events before continuing.
+The PVCs should eventually reach the `Bound` state.
 
-Check the Ingress:
+If a claim remains `Pending`, inspect the PVC details and events. Verify the StorageClass, NFS provisioner status, server connectivity, export permissions, and available capacity.
+
+### 11.4. Check the Ingress
+
+List the Harbor Ingress resources:
 
 ```bash
 kubectl get ingress -n harbor
@@ -480,7 +616,11 @@ kubectl get ingress -n harbor
 
 ![Screenshot: Harbor Ingress](../images/harbor-tls/41-harbor-ingress.png)
 
-Check the Helm release:
+Verify that the hostname is `harbor.k8s.local` and that the Ingress uses the expected class.
+
+### 11.5. Check the Helm release
+
+Inspect the Helm release status:
 
 ```bash
 helm status harbor -n harbor
@@ -488,59 +628,98 @@ helm status harbor -n harbor
 
 ![Screenshot: Harbor Helm Release Status](../images/harbor-tls/42-harbor-helm-status.png)
 
+Use this output together with the Pod, Service, PVC, and Ingress status to assess the deployment.
+
 ## 12. Troubleshoot Pods and Storage
 
-If any Pod is not ready, inspect the namespace events:
+If a Harbor component fails to start, inspect the namespace events:
 
 ```bash
 kubectl get events -n harbor --sort-by=.metadata.creationTimestamp
 ```
 
-Inspect a problematic Pod:
+Describe a problematic Pod:
 
 ```bash
 kubectl describe pod -n harbor <POD_NAME>
 ```
 
-Replace `<POD_NAME>` with the actual Pod name from `kubectl get pods -n harbor`.
+Replace `<POD_NAME>` with the actual Pod name returned by `kubectl get pods -n harbor`.
 
-Check the logs of a problematic component:
+Retrieve its logs:
 
 ```bash
 kubectl logs -n harbor <POD_NAME> --all-containers=true --tail=100
 ```
 
-Replace `<POD_NAME>` with the actual Pod name. Use the events, Pod description and logs to identify whether the issue is related to image pulls, storage, permissions, configuration or application startup.
+If the Pod has multiple containers and only one needs investigation, specify the appropriate container with `-c`.
+
+For persistent storage issues, inspect the affected claim:
+
+```bash
+kubectl describe pvc <PVC_NAME> -n harbor
+```
+
+Replace `<PVC_NAME>` with the actual claim name.
+
+Common causes include:
+
+- The NFS provisioner is not ready.
+- The `nfs-harbor` StorageClass is missing or misconfigured.
+- The NFS server or export is unreachable.
+- NFS directory permissions prevent access.
+- The requested storage exceeds the available capacity.
+- A Helm values key is unsupported by the selected chart version.
+
+Resolve the underlying issue before attempting repeated Helm installations or upgrades.
 
 ## 13. Trust the Local CA on Client Machines
 
-The certificate is signed by a local CA, so client machines must trust `ca.crt` to validate the server certificate without warnings.
+Because the Harbor certificate is signed by a local CA, client machines must trust `ca.crt` to validate the certificate without trust warnings.
 
-### Linux clients
+Transfer **only the public CA certificate** to the client. Never distribute `ca.key` or the Harbor server's private key.
 
-Securely transfer **only** `ca.crt` to the Linux client. Do not transfer `ca.key` or the server's private key.
+### 13.1. Configure a Linux client
 
-On Debian/Ubuntu clients, copy the CA certificate to the local trust store:
+On Debian or Ubuntu, copy the CA certificate to the system trust directory:
 
 ```bash
 sudo cp ca.crt /usr/local/share/ca-certificates/harbor-local-ca.crt
 ```
 
-Update the CA certificates:
+Update the trusted certificates:
 
 ```bash
 sudo update-ca-certificates
 ```
 
-## 13. Test Harbor HTTPS Access
+Ensure that the file copied to the client is the same CA certificate that signed `harbor.crt`.
 
-From a client that resolves `harbor.k8s.local` to the Traefik external IP, run:
+### 13.2. Configure a Windows client
+
+Transfer `ca.crt` securely to the Windows client.
+
+Import the certificate into the **Trusted Root Certification Authorities** certificate store for the appropriate user or local computer, according to the trust requirements of your environment.
+
+Only trust a CA certificate whose origin and fingerprint you have verified. Importing a CA certificate grants trust to certificates signed by that CA.
+
+## 14. Test Harbor HTTPS Access
+
+Test the HTTPS endpoint from a client that can resolve `harbor.k8s.local` to the current Traefik external IP.
+
+### 14.1. Test with the CA certificate explicitly
+
+If `ca.crt` is available at `$HOME/harbor-tls/ca.crt` on the test machine, run:
 
 ```bash
 curl --cacert "$HOME/harbor-tls/ca.crt" -I https://harbor.k8s.local
 ```
 
-On a client where the CA has been installed in the operating system trust store, you can test with:
+This test explicitly tells `curl` which CA certificate to use when validating the server certificate.
+
+### 14.2. Test using the system trust store
+
+On a Linux client where the CA has been installed into the system trust store, run:
 
 ```bash
 curl -I https://harbor.k8s.local
@@ -550,16 +729,21 @@ curl -I https://harbor.k8s.local
 
 The exact HTTP status depends on the Harbor configuration. A successful TLS connection should not report a certificate trust or hostname mismatch error.
 
+### 14.3. Open the Harbor web interface
+
 Open the following URL in a browser:
 
 `https://harbor.k8s.local`
 
 ![Screenshot: Harbor Web Interface](../images/harbor-tls/51-harbor-web-interface.png)
 
-Sign in using the username `admin` and the administrator password configured earlier.
+Sign in using the username `admin` and the administrator password configured in Step 6.
 
-**Security note:** Do not use `curl -k` as a permanent solution to certificate errors. Verify the DNS record, certificate SAN, certificate chain and client CA trust instead.
+If the page is unreachable, verify DNS resolution, the Traefik external IP, the Ingress rule, the `websecure` entrypoint, and the relevant firewall rules.
 
+If the browser reports a certificate warning, verify the certificate chain, SAN, validity dates, and client CA trust.
+
+**Security note:** Do not use `curl -k` as a permanent solution to certificate errors. Validate the DNS record, certificate SAN, certificate chain, and client CA trust instead.
 
 ## References
 
