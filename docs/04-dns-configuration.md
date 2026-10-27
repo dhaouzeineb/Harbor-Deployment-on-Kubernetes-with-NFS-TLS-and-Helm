@@ -35,7 +35,7 @@ Run the following command on a machine with access to the Kubernetes cluster:
 kubectl get svc -n traefik
 ```
 
-![Screenshot: Traefik External IP](../images/dns/01-traefik-external-ip.png)
+
 
 Locate the Traefik Service and note the value displayed in the `EXTERNAL-IP` column.
 
@@ -121,7 +121,7 @@ Create a backup of the original options file:
 sudo cp /etc/bind/named.conf.options /etc/bind/named.conf.options.bak
 ```
 
-![Screenshot: BIND9 Options Backup](../images/dns/06-bind9-options-backup.png)
+
 
 The backup allows you to restore the previous configuration if necessary.
 
@@ -194,7 +194,7 @@ Back up the existing local configuration file:
 sudo cp /etc/bind/named.conf.local /etc/bind/named.conf.local.bak
 ```
 
-![Screenshot: BIND9 Local Configuration Backup](../images/dns/09-bind9-local-backup.png)
+
 
 ### 6.2. Edit the local configuration
 
